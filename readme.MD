@@ -2,7 +2,7 @@
 # desc
 
 This is a rust rocket mq client for rocket mq version 4.  
-if you use rocket mq 5. you shou use [rocketmq-client-rs](https://crates.io/crates/rocketmq)
+if you use rocket mq 5. you should use [rocketmq-client-rs](https://crates.io/crates/rocketmq)
 
 # how to use
 
