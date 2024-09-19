@@ -2,6 +2,9 @@
 name = "rocketmq-client-v4"
 version = "0.1.0"
 edition = "2021"
+description = "Generate table Struct and Sql function for table based on sqlx and sql_builder"
+license = "MIT"
+homepage = "https://github.com/zhangyangyang3/rocketmq-client-v4"
 
 [dependencies]
 zip = "2.2.0"
