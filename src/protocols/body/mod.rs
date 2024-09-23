@@ -22,3 +22,5 @@ pub mod heartbeat_data;
 pub mod get_consumer_list_by_group_response_body;
 
 pub mod get_consumer_status_body;
+
+pub mod mq_message;

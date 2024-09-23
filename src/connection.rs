@@ -95,7 +95,7 @@ impl MqConnection {
 
 #[cfg(test)]
 mod test {
-    use log::{info, LevelFilter};
+    use log::{info};
     use crate::connection::{get_client_ip, MqConnection};
 
     #[test]

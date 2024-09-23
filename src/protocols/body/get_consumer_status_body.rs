@@ -72,8 +72,6 @@ mod test {
     use std::collections::HashMap;
     use crate::protocols::body::get_consumer_status_body::GetConsumerStatusBody;
     use crate::protocols::body::message_queue::MessageQueue;
-    use crate::rocketmq::protocols::body::get_consumer_status_body::GetConsumerStatusBody;
-    use crate::rocketmq::protocols::body::message_queue::MessageQueue;
     #[test]
     fn test_map_to_json() {
         let queue1 = MessageQueue::new("test_topic".to_string(), "test_broker".to_string(), 0);
