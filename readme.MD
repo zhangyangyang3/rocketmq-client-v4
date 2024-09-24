@@ -6,6 +6,8 @@ if you use rocket mq 5. you should use [rocketmq-client-rs](https://crates.io/cr
 
 # how to use
 
+## consumer
+
 ```rust
 use std::future::Future;
 use std::sync::Arc;
@@ -48,16 +50,43 @@ pub async fn main() {
 
 ```
 
+## producer
+
+```rust
+#[tokio::test]
+    async fn send_message_test() {
+
+        let offset = UtcOffset::from_hms(8, 0, 0).unwrap();
+        simple_logger::SimpleLogger::new().with_utc_offset(offset).with_level(LevelFilter::Debug).env().init().unwrap();
+
+        let message_body = r#"{"id":"3910000000000056508"}"#;
+        let body = message_body.as_bytes().to_vec();
+
+        let name_addr = "192.168.3.49:9876".to_string();
+        let topic = "topic_test_007".to_string();
+
+        let mut producer = Producer::new("rust_send_group_1".to_string(), name_addr.clone()).await;
+        for i in 0..10 {
+            producer.send_message(topic.clone(), body.clone(), format!("{i}")).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+
+```
 
 # attention*
 <b>
-for now. it only supports cluster mode consume message.
+for now. it only supports cluster mode consume message. 
+</b>
+
+<b>
+for now. producer is ok. but KEYS and TAGS not supported.
 </b>
 
 
 
 # todo
-produce message  
 consume broadcast message
 
 # connect me

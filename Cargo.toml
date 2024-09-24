@@ -1,8 +1,8 @@
 [package]
 name = "rocketmq-client-v4"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Generate table Struct and Sql function for table based on sqlx and sql_builder"
+description = "rocket mq rust client for remote protocol. works on rocket mq V4"
 license = "MIT"
 homepage = "https://github.com/zhangyangyang3/rocketmq-client-v4"
 
