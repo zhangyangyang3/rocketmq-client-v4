@@ -148,7 +148,7 @@ impl MqCommand {
         panic!("read from mq server failed, stop to connect");
     }
 
-    async fn read_from_stream(stream: &mut TcpStream) -> Self {
+    pub async fn read_from_stream(stream: &mut TcpStream) -> Self {
         let size = stream.read_i32().await;
         if size.is_err() {
             panic!("read command from mq failed! {:?}", size.err());

@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use local_ip_address::local_ip;
-use log::{ warn};
+use log::{debug, warn};
 use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
+use tokio::sync::{mpsc};
+use tokio::sync::mpsc::Receiver;
+use tokio::time::sleep;
 use crate::connection::MqConnection;
 use crate::protocols::body::heartbeat_data::HeartbeatData;
 use crate::protocols::body::message_queue::MessageQueue;
@@ -15,51 +18,66 @@ pub struct  Producer {
 
     pub group_name: String,
     pub client_id: String,
-    pub broker_stream: TcpStream,
-    pub broker_id: i64,
     pub message_queue: i32,
     pub name_server: String,
     pub message_queue_map: HashMap<String, Vec<MessageQueue>>,
+    pub tx: mpsc::Sender<MqCommand>,
 }
 
 impl Producer {
-    pub fn new(group_name: String, broker_stream: TcpStream, broker_id: i64, name_server: String) -> Producer {
+    pub async fn new(group_name: String, name_server: String) -> Producer {
         let ip = local_ip().unwrap();
         let pid = sysinfo::get_current_pid().unwrap().as_u32();
         let client_id = format!("{}@{}", ip, pid);
+        let (tx,rx) = mpsc::channel(1024);
+        Self::init(rx, &name_server, tx.clone(), &client_id, &group_name).await;
         Producer {
             group_name,
             client_id,
-            broker_stream,
-            broker_id,
             message_queue: 1,
             name_server,
             message_queue_map: HashMap::new(),
+            tx,
         }
     }
 
 
-    pub async fn init(&mut self) {
+    pub async fn init( mut rx: Receiver<MqCommand>, name_server: &str, tx: mpsc::Sender<MqCommand>
+    , client_id: &str, producer_group: &str
+    ) {
 
-        let stream = &mut self.broker_stream;
-        let client_id = &self.client_id;
-        let group_name = &self.group_name;
-        let heart = HeartbeatData::new_producer_data(client_id.clone(), group_name.clone());
-        heart.send_heartbeat(stream).await;
+        let cluster = MqConnection::get_cluster_info(name_server).await;
+        let (mut broker_stream, _) = MqConnection::get_broker_tcp_stream(&cluster).await;
 
-        // tokio::spawn(async move {
-        //     loop {
-        //         debug!("send producer heart beat: producer group{:?}", group_name.clone());
-        //         let heart = HeartbeatData::new_producer_data(client_id.clone(), group_name.clone());
-        //         heart.send_heartbeat(&mut stream).await;
-        //         sleep(Duration::from_secs(5)).await;
-        //     }
-        // });
+        tokio::spawn(async move {
+            loop {
+                let cmd: MqCommand = rx.recv().await.unwrap();
+                let send = broker_stream.write_all(&cmd.to_bytes()).await;
+                if send.is_err() {
+                    warn!("send command to mq failed. req cmd:{}, response error:{:?}", cmd.req_code, send.err());
+                    continue;
+                }
+                let _ = MqCommand::read_from_stream(&mut broker_stream).await;
+            }
+        });
+
+        let client = client_id.to_string();
+        let producer_group = producer_group.to_string();
+        tokio::spawn(async move {
+            loop {
+                let heart_beat = HeartbeatData::new_producer_data(client.clone(), producer_group.clone());
+                let body = heart_beat.to_json_bytes();
+                let body = MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], body);
+                tx.send(body).await.unwrap();
+                sleep(Duration::from_secs(5)).await;
+            }
+        });
 
     }
     pub async fn send_message(&mut self, topic: String, message: Vec<u8>, key: String) -> Result<(), std::io::Error> {
         let mut properties = HashMap::new();
         properties.insert("KEYS".to_string(), key);
+        properties.insert("WAIT".to_string(), "true".to_string());
         self.send_with_properties(topic,  properties, message).await
     }
 
@@ -67,6 +85,8 @@ impl Producer {
         let mut properties = HashMap::new();
         properties.insert("TAGS".to_string(), tag);
         properties.insert("KEYS".to_string(), key);
+        properties.insert("WAIT".to_string(), "true".to_string());
+
         self.send_with_properties(topic, properties, message).await
     }
 
@@ -84,12 +104,9 @@ impl Producer {
         let header_bytes = SendMessageRequestHeaderV2::new(header).to_bytes_1();
         let body = message.body;
         let cmd = MqCommand::new_with_body(request_code::SEND_MESSAGE_V2, vec![], header_bytes, body);
-        let send = self.broker_stream.write_all(&cmd.to_bytes()).await;
-        if send.is_err() {
-            warn!("send message failed:{:?}", send);
-            return send;
-        }
-        let _ = MqCommand::read_from_stream_with_opaque(&mut self.broker_stream, cmd.opaque).await;
+        debug!("cmd bytes: {:?}", &cmd.to_bytes());
+        let tx = self.tx.clone();
+        tx.send(cmd).await.unwrap();
         Ok(())
     }
 
@@ -122,21 +139,39 @@ impl Producer {
 
 #[cfg(test)]
 mod send_test {
-    use crate::connection::MqConnection;
+    use std::time::Duration;
+    use log::LevelFilter;
+    use time::UtcOffset;
+    use crate::producer::Producer;
 
     #[tokio::test]
     async fn send_message_test() {
-        let message_body = r#"{"id":"3910000000000056508","parentId":null,"senderId":"4296638931631415296","receiverId":null,"groupId":"4296643037620133888","type":"File","chatType":"Group","content":"{\"suffix\":\"\",\"url\":\"https://im-rc.s3.ap-southeast-1.amazonaws.com/public/dd2554235243522435.zip\",\"name\":\"im-patch.zip\",\"size\":\"60.23KB\"}","serverReceiveTime":"2024/09/23 09:37:47","createTime":"2024/09/23 09:37:44","displayContent":""}"#;
+
+        let offset = UtcOffset::from_hms(8, 0, 0).unwrap();
+        simple_logger::SimpleLogger::new().with_utc_offset(offset).with_level(LevelFilter::Debug).env().init().unwrap();
+
+        let message_body = r#"{"id":"3910000000000056508"}"#;
         let body = message_body.as_bytes().to_vec();
 
         let name_addr = "192.168.3.49:9876".to_string();
-        let topic = "pushNoticeMessage_To".to_string();
+        let topic = "topic_test_007".to_string();
 
-        let cluster = MqConnection::get_cluster_info(&name_addr).await;
-        let (tcp_stream, id) = MqConnection::get_broker_tcp_stream(&cluster).await;
+        let mut producer = Producer::new("rust_send_group_1".to_string(), name_addr.clone()).await;
+        for i in 0..10 {
+            producer.send_message(topic.clone(), body.clone(), format!("{i}")).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
 
-        let mut producer = crate::producer::Producer::new("rust_send_group_1".to_string(),tcp_stream, id, name_addr.clone());
-        producer.init().await;
-        producer.send_message_with_tag(topic.clone(), "TAG1".to_string(), body, "3910000000000056508".to_string()).await.unwrap();
+
+    #[test]
+    fn to_string_test () {
+        let arr:[u8;166] = [ 0, 1, 97, 0, 0, 0, 17, 114, 117, 115, 116, 95, 115, 101, 110, 100, 95, 103, 114, 111, 117, 112, 95, 49, 0, 1, 98, 0, 0, 0, 14, 116, 111, 112, 105, 99, 95, 116, 101, 115, 116, 95, 48, 48, 55, 0, 1, 99, 0, 0, 0, 6, 84, 66, 87, 49, 48, 50, 0, 1, 100, 0, 0, 0, 4, 49, 48, 48, 48, 0, 1, 101, 0, 0, 0, 1, 54, 0, 1, 102, 0, 0, 0, 1, 48, 0, 1, 103, 0, 0, 0, 13, 49, 55, 50, 55, 49, 52, 51, 52, 52, 52, 57, 57, 48, 0, 1, 104, 0, 0, 0, 1, 48, 0, 1, 105, 0, 0, 0, 6, 75, 69, 89, 83, 49, 48, 0, 1, 106, 0, 0, 0, 1, 48, 0, 1, 107, 0, 0, 0, 5, 102, 97, 108, 115, 101, 0, 1, 108, 0, 0, 0, 1, 48, 0, 1, 109, 0, 0, 0, 5, 102, 97, 108, 115, 101,];
+        let s = String::from_utf8_lossy(&arr);
+        println!("{:?}", s);
+
+        let arr:[u8;12] = [49, 55, 50, 55, 49, 52, 55, 51, 52, 49, 55, 49];
+        let s = String::from_utf8_lossy(&arr);
+        println!("{:?}", s);
     }
 }

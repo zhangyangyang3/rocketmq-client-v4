@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use bytes::{BufMut, BytesMut};
 use serde::Serialize;
 use crate::protocols::{get_current_time_millis, SerializeDeserialize};
 
@@ -98,4 +99,100 @@ impl SendMessageRequestHeaderV2 {
 }
 
 impl SerializeDeserialize for SendMessageRequestHeaderV2 {
+    fn to_bytes_1(&self) -> Vec<u8>
+    where
+        Self: Serialize
+    {
+        let mut buf = BytesMut::with_capacity(128);
+        buf.put_i16(1);
+        buf.put_slice("a".as_bytes());
+        buf.put_i32(self.a.len() as i32);
+        buf.put_slice(self.a.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("b".as_bytes());
+        buf.put_i32(self.b.len() as i32);
+        buf.put_slice(self.b.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("c".as_bytes());
+        buf.put_i32(self.c.len() as i32);
+        buf.put_slice(self.c.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("d".as_bytes());
+        let td = self.d.to_string();
+        buf.put_i32(td.len() as i32);
+        buf.put_slice(td.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("e".as_bytes());
+        let te = self.e.to_string();
+        buf.put_i32(te.len() as i32);
+        buf.put_slice(te.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("f".as_bytes());
+        let tf = self.f.to_string();
+        buf.put_i32(tf.len() as i32);
+        buf.put_slice(tf.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("g".as_bytes());
+        let tg = self.g.to_string();
+        buf.put_i32(tg.len() as i32);
+        buf.put_slice(tg.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("h".as_bytes());
+        let th = self.h.to_string();
+        buf.put_i32(th.len() as i32);
+        buf.put_slice(th.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("i".as_bytes());
+        buf.put_i32(self.i.len() as i32);
+        buf.put_slice(self.i.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("j".as_bytes());
+        let tj = self.j.to_string();
+        buf.put_i32(tj.len() as i32);
+        buf.put_slice(tj.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("k".as_bytes());
+        match self.k {
+            true => {
+                buf.put_i32("true".len() as i32);
+                buf.put_slice("true".as_bytes());
+            }
+            false => {
+                buf.put_i32("false".len() as i32);
+                buf.put_slice("false".as_bytes());
+            }
+        }
+
+        buf.put_i16(1);
+        buf.put_slice("l".as_bytes());
+        let tl = self.l.to_string();
+        buf.put_i32(tl.len() as i32);
+        buf.put_slice(tl.as_bytes());
+
+        buf.put_i16(1);
+        buf.put_slice("m".as_bytes());
+        match self.m {
+            true => {
+                buf.put_i32("true".len() as i32);
+                buf.put_slice("true".as_bytes());
+            }
+            false => {
+                buf.put_i32("false".len() as i32);
+                buf.put_slice("false".as_bytes());
+            }
+        }
+
+        // debug!("bytes:{:?}", buf.to_vec());
+        buf.to_vec()
+    }
 }
