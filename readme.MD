@@ -80,11 +80,6 @@ pub async fn main() {
 for now. it only supports cluster mode consume message. 
 </b>
 
-<b>
-for now. producer is ok. but KEYS and TAGS not supported.
-</b>
-
-
 
 # todo
 consume broadcast message
