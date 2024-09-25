@@ -28,7 +28,7 @@ impl SendMessageRequestHeader {
             producerGroup: producer_group,
             topic,
             defaultTopic: "TBW102".to_string(),
-            defaultTopicQueueNums: 1000,
+            defaultTopicQueueNums: 4,
             queueId: queue_id,
             sysFlag: 0,
             bornTimestamp: get_current_time_millis(),
@@ -36,23 +36,25 @@ impl SendMessageRequestHeader {
             properties: Self::convert_map_to_string(properties),
             reconsumeTimes: 0,
             unitMode: false,
-            batch: false,
+            batch: true,
             maxReconsumeTimes: 0,
         }
     }
 
     pub fn convert_map_to_string(map: &HashMap<String, String>) -> String {
-        let mut ret = String::new();
+        let mut bytebuf = BytesMut::with_capacity(128);
         for (k, v) in map {
-            ret.push_str(k);
-            ret.push_str("1");
-            ret.push_str(v);
-            ret.push_str("2");
+            bytebuf.put_slice(k.as_bytes());
+            bytebuf.put_u8(1);
+            bytebuf.put_slice(v.as_bytes());
+            bytebuf.put_u8(2)
         }
-        if ret.len() > 0 {
-            ret.remove(ret.len()-1);
+        let mut list = bytebuf.to_vec();
+
+        if list.len() > 0 {
+            list.pop();
         }
-        ret
+        String::from_utf8(list).unwrap()
     }
 }
 

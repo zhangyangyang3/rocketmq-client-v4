@@ -57,7 +57,12 @@ impl Producer {
                     warn!("send command to mq failed. req cmd:{}, response error:{:?}", cmd.req_code, send.err());
                     continue;
                 }
-                let _ = MqCommand::read_from_stream(&mut broker_stream).await;
+                let resp = MqCommand::read_from_stream(&mut broker_stream).await;
+                if resp.req_code != 0 {
+                    warn!("send command to mq failed. req cmd:{}, response code:{}, remark{:?}", cmd.req_code, resp.req_code, String::from_utf8(resp.r_body));
+                } else {
+                    debug!("read from mq success. req cmd:{}, resp remark:{:?}, ext field:{:?}", cmd.req_code, String::from_utf8(resp.r_body), String::from_utf8(resp.e_body));
+                }
             }
         });
 
@@ -102,9 +107,8 @@ impl Producer {
 
         let header = SendMessageRequestHeader::new(self.group_name.clone(), topic.clone(), queue_id, &message.properties);
         let header_bytes = SendMessageRequestHeaderV2::new(header).to_bytes_1();
-        let body = message.body;
-        let cmd = MqCommand::new_with_body(request_code::SEND_MESSAGE_V2, vec![], header_bytes, body);
-        debug!("cmd bytes: {:?}", &cmd.to_bytes());
+        let body = message.encode_message();
+        let cmd = MqCommand::new_with_body(request_code::SEND_BATCH_MESSAGE, vec![], header_bytes, body);
         let tx = self.tx.clone();
         tx.send(cmd).await.unwrap();
         Ok(())
@@ -142,6 +146,7 @@ mod send_test {
     use std::time::Duration;
     use log::LevelFilter;
     use time::UtcOffset;
+    use uuid::Uuid;
     use crate::producer::Producer;
 
     #[tokio::test]
@@ -157,8 +162,9 @@ mod send_test {
         let topic = "topic_test_007".to_string();
 
         let mut producer = Producer::new("rust_send_group_1".to_string(), name_addr.clone()).await;
-        for i in 0..10 {
-            producer.send_message(topic.clone(), body.clone(), format!("{i}")).await.unwrap();
+        for _i in 0..10 {
+            let uid = Uuid::new_v4();
+            producer.send_message(topic.clone(), body.clone(), uid.to_string()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     }
