@@ -15,6 +15,7 @@ use crate::protocols::header::query_consumer_offset_request_header::QueryConsume
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
 use crate::protocols::{PermName, response_code};
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
+use crate::protocols::header::get_consumer_status_request_header::GetConsumerStatusRequestHeader;
 
 pub struct MqConsumer {
     pub name_server_addr: String,
@@ -63,6 +64,8 @@ impl MqConsumer {
                 continue;
             }
 
+            let mut consumer_status = GetConsumerStatusRequestHeader::new(self.topic.clone(), self.consume_group.clone(), self.client_id.clone());
+            consumer_status.send_request(&mut self.broker_stream, &mq_list).await;
             for mq in &mq_list {
                 // 选择从message queue 中获取消息
                 let mut offset = QueryConsumerOffsetRequestHeader::new(self.consume_group.clone(),mq.topic.clone(), mq.queueId)
@@ -298,7 +301,7 @@ mod test {
 
         info!("tcp stream:{:?}, id:{}", tcp_stream, id);
         // let mut consumer = MqConsumer::new_consumer(name_addr, "T_PushNoticeMessage_group".to_string(), topic, tcp_stream, id);
-        let mut consumer = MqConsumer::new_consumer(name_addr, "Oss_PushNoticeMessage_group".to_string(), topic, tcp_stream, id);
+        let mut consumer = MqConsumer::new_consumer(name_addr, "consume_pushNoticeMessage_test_1".to_string(), topic, tcp_stream, id);
         let lock = Arc::new(RwLock::new(true));
         let lock1 = lock.clone();
         let handle = Arc::new(Handler {});

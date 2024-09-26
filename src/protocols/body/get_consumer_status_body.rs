@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use log::debug;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use crate::protocols::body::message_queue::MessageQueue;
-use crate::protocols::mq_command::MqCommand;
+use crate::protocols::mq_command::{HEADER_SERIALIZE_METHOD_JSON, MqCommand};
 use crate::protocols::response_code;
 
 #[derive(Debug)]
@@ -39,28 +40,28 @@ impl GetConsumerStatusBody {
             body.push_str(&v.to_string());
             body.push_str(",");
         }
+        if body.ends_with(",") {
+            body.pop();
+        }
         body.push_str("}");
         body.push_str("}");
+
         body
     }
 
-    pub async fn send_request(self, broker_stream: &mut TcpStream) {
+    pub async fn send_request(self, broker_stream: &mut TcpStream, opaque: i32) {
 
         let body = self.to_json();
+        debug!("response server GetConsumerStatusBody:{:?}", body);
         let bytes = Vec::from(body);
-        let cmd = MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], bytes);
-        let opaque = cmd.opaque;
+        let mut cmd = MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], bytes);
+        cmd.request_flag = 1;
+        cmd.opaque = opaque;
+        cmd.header_serialize_method = HEADER_SERIALIZE_METHOD_JSON;
         let req_data = cmd.to_bytes();
         let req = broker_stream.write_all(&req_data).await;
         if req.is_err() {
             panic!("send GetConsumerStatusBody failed:{:?}", req.err());
-        }
-        let ret = MqCommand::read_from_stream_with_opaque(broker_stream, opaque).await;
-        if ret.req_code == response_code::SUCCESS {
-            println!("GetConsumerStatusBody success,  opaque:{}, resp opaque:{}", opaque, ret.opaque);
-        } else {
-            panic!("GetConsumerStatusBody failed, opaque:{}, resp opaque:{} req_code:{}, remark:{:?}",
-                   opaque,ret.opaque, ret.req_code, String::from_utf8(ret.r_body));
         }
     }
 }
