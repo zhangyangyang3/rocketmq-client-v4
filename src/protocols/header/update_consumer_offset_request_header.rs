@@ -33,9 +33,12 @@ impl UpdateConsumerOffsetRequestHeader {
         }
     }
 
-    pub async fn send_update_consumer_offset(&self, broker_stream: &mut TcpStream) {
+    pub fn command(&self) -> MqCommand {
         let body = self.to_bytes_1();
-        let body = MqCommand::new_with_body(request_code::UPDATE_CONSUMER_OFFSET, vec![], body, vec![]);
+        MqCommand::new_with_body(request_code::UPDATE_CONSUMER_OFFSET, vec![], body, vec![])
+    }
+    pub async fn send_update_consumer_offset(&self, broker_stream: &mut TcpStream) {
+        let body = self.command();
         let opaque = body.opaque;
         let body = body.to_bytes();
 

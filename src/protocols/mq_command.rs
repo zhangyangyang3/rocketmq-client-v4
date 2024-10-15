@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock};
 use atomic_counter::{AtomicCounter, ConsistentCounter};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt};
+use tokio::net::tcp::{OwnedReadHalf};
 use tokio::net::TcpStream;
 
 /**
@@ -166,6 +167,27 @@ impl MqCommand {
         let cmd = Self::convert_bytes_to_mq_command(frame.to_vec());
         cmd
     }
+
+
+    pub async fn read_from_read_half(stream:&mut OwnedReadHalf) -> Self {
+        let size = stream.read_i32().await;
+        if size.is_err() {
+            panic!("read command from mq failed! {:?}", size.err());
+        }
+        let size = size.unwrap();
+        let mut buf = vec![0u8; size as usize];
+        let body = stream.read_exact(&mut buf).await;
+        if body.is_err() {
+            panic!("read command data from mq failed!, ignore it");
+        }
+        let mut frame = BytesMut::with_capacity((4 + size) as usize);
+        frame.put_i32(size);
+        frame.put_slice(&buf.to_vec());
+
+        let cmd = Self::convert_bytes_to_mq_command(frame.to_vec());
+        cmd
+    }
+
 
     /**
         convert a command to bytes

@@ -152,10 +152,14 @@ pub struct ConvertUtil;
 
 impl ConvertUtil {
     pub fn convert_string_bytes_to_i64(bytes: Vec<u8>) -> i64 {
-
         let str = String::from_utf8(bytes).unwrap();
         let ret: i64 =  str.parse().unwrap();
+        ret
+    }
 
+    pub fn convert_string_bytes_to_i32(bytes: Vec<u8>) -> i32 {
+        let str = String::from_utf8(bytes).unwrap();
+        let ret: i32 =  str.parse().unwrap();
         ret
     }
 }
@@ -164,6 +168,10 @@ pub fn get_current_time_millis() -> i64 {
     let now = std::time::SystemTime::now();
     let duration = now.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap();
     return duration.as_millis() as i64;
+}
+
+pub async fn sleep(millis: u64) {
+    tokio::time::sleep(std::time::Duration::from_millis(millis)).await;
 }
 
 #[cfg(test)]
