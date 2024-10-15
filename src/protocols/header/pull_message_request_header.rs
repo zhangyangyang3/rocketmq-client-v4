@@ -48,9 +48,13 @@ impl PullMessageRequestHeader {
         }
     }
 
-    pub async fn send_request(&self, broker_stream: &mut TcpStream) -> Option<MqCommand> {
+    pub fn to_command(&self) -> MqCommand {
         let header_body = self.to_bytes_1();
         let req = MqCommand::new_with_body(request_code::PULL_MESSAGE, vec![], header_body, vec![]);
+        return req;
+    }
+    pub async fn send_request(&self, broker_stream: &mut TcpStream) -> Option<MqCommand> {
+        let req = self.to_command();
         let opaque = req.opaque;
         let req = req.to_bytes();
 

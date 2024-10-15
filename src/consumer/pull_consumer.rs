@@ -4,9 +4,10 @@ use std::rc::Rc;
 use std::sync::{Arc, LazyLock};
 use log::{debug, info, warn};
 use tokio::io::{AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, RwLock};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Receiver, Sender};
 use crate::connection::{get_client_ip, MqConnection};
 use crate::consumer::message_handler::MessageHandler;
 use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
@@ -18,7 +19,7 @@ use crate::protocols::header::pull_message_request_header::PullMessageRequestHea
 use crate::protocols::header::pull_message_response_header::PullMessageResponseHeader;
 use crate::protocols::header::query_consumer_offset_request_header::QueryConsumerOffsetRequestHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
-use crate::protocols::{mq_command, PermName, request_code, response_code, sleep};
+use crate::protocols::{header, mq_command, PermName, request_code, response_code, SerializeDeserialize, sleep};
 use crate::protocols::body::message_queue;
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
 use crate::protocols::header::get_consumer_status_request_header::GetConsumerStatusRequestHeader;
@@ -86,6 +87,7 @@ pub fn get_mut_consumer_by_consumer_group(group: &str) -> Option<&mut MqConsumer
 }
 
 
+#[derive(Debug)]
 pub struct MqConsumer {
     pub name_server_addr: String,
     pub consume_group: String,
@@ -103,24 +105,16 @@ pub struct MqConsumer {
 impl MqConsumer {
 
     pub async fn new_cluster_consumer(mut broker_stream: TcpStream) {
-        let (tx, mut rx) = mpsc::channel::<MqCommand>(1024);
+        let (tx, rx) = mpsc::channel::<MqCommand>(1024);
         let (consumer_tx, _consumer_rx) = mpsc::channel::<MessageBody>(1024);
-        let (mut read_half, mut write) = broker_stream.into_split();
-        tokio::spawn(async move {
-            loop {
-                let cmd: MqCommand = rx.recv().await.unwrap();
-                let bytes = cmd.to_bytes();
-                let req_code = cmd.req_code;
-                let opaque = cmd.opaque;
+        let (read_half, write) = broker_stream.into_split();
+        Self::send_cmd_to_mq(rx, write).await;
+        Self::read_cmd_from_mq(read_half, consumer_tx, tx.clone()).await;
+        Self::send_heartbeat(tx.clone()).await;
+        Self::do_pull_message(tx.clone()).await;
+    }
 
-                unsafe { OPAQUE_TABLE.borrow_mut().insert(cmd.opaque, cmd); }
-                let w = write.write_all(&bytes).await;
-                if w.is_err() {
-                    warn!("write to rocketmq failed, req_code:{}, opaque:{}, err:{:?}", req_code, opaque, w.err())
-                }
-            }
-        });
-
+    async fn read_cmd_from_mq(mut read_half: OwnedReadHalf, consumer_tx: Sender<MessageBody>, tx: Sender<MqCommand>) {
         tokio::spawn(async move {
             loop {
                 let mq_command = MqCommand::read_from_read_half(&mut read_half).await;
@@ -172,7 +166,7 @@ impl MqConsumer {
 
                                 let req = GetConsumerListByGroupRequestHeader::new(consume_group.to_string()).to_command();
                                 tx.send(req).await.unwrap();
-                                info!("NOTIFY_CONSUMER_IDS_CHANGED, should do re balance")
+                                info!("NOTIFY_CONSUMER_IDS_CHANGED, should do re balance");
                             }
 
                             response_code::TOPIC_NOT_EXIST => {
@@ -189,7 +183,78 @@ impl MqConsumer {
         });
     }
 
+    async fn send_cmd_to_mq(mut rx: Receiver<MqCommand>,mut write: OwnedWriteHalf) {
+        tokio::spawn(async move {
+            loop {
+                let cmd: MqCommand = rx.recv().await.unwrap();
+                let bytes = cmd.to_bytes();
+                let req_code = cmd.req_code;
+                let opaque = cmd.opaque;
 
+                unsafe { OPAQUE_TABLE.borrow_mut().insert(cmd.opaque, cmd); }
+                let w = write.write_all(&bytes).await;
+                if w.is_err() {
+                    warn!("write to rocketmq failed, req_code:{}, opaque:{}, err:{:?}", req_code, opaque, w.err())
+                }
+            }
+        });
+    }
+
+
+
+    ///
+    /// send heartbeat to server every 10 second.
+    ///
+    async fn send_heartbeat(tx: Sender<MqCommand>) {
+        tokio::spawn(async move {
+            loop {
+                unsafe {
+                    for (_, consumer) in CONSUMER_MAP.borrow().iter() {
+                        let heartbeat_data = HeartbeatData::new_producer_data(consumer.client_id.clone(), consumer.consume_group.clone());
+                        let heartbeat_data = heartbeat_data.to_json_bytes();
+                        let heartbeat_cmd = MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], heartbeat_data);
+                        tx.send(heartbeat_cmd).await.unwrap();
+                    }
+                }
+                Self::sleep(10_000).await;
+            }
+        });
+    }
+
+    ///pull message for loop
+    async fn do_pull_message(tx: Sender<MqCommand>) {
+        tokio::spawn(async move {
+            loop {
+                unsafe {
+                    for (_, consumer) in CONSUMER_MAP.borrow().iter() {
+                        if consumer.message_queues.is_empty() {
+                            info!("fetch consumer message queue info:{:?}", consumer);
+                            let cmd = GetConsumerListByGroupRequestHeader::new(consumer.consume_group.clone()).to_command();
+                            tx.send(cmd).await.unwrap();
+                            continue;
+                        }
+
+                        for ( queue) in consumer.message_queues.iter() {
+                            let offset = unsafe {
+                                info!("fetch queue offset. queue:{:?}", queue);
+                                MESSAGE_QUEUE_MAP.get(&queue.key()).unwrap_or(-1)
+                            };
+                            if offset < 0 {
+                                let cmd = QueryConsumerOffsetRequestHeader::new(consumer.consume_group.clone(),consumer.topic.clone(), queue.queueId);
+                                tx.send(cmd).await.unwrap();
+                                continue;
+                            }
+                            // pull message
+                            let cmd = PullMessageRequestHeader::new(consumer.consume_group.clone(),
+                                                                    consumer.topic.clone(), queue.queueId, offset, 0).to_command();
+                            tx.send(cmd).await.unwrap();
+                        }
+                    }
+                }
+                Self::sleep(50).await;
+            }
+        });
+    }
 
     pub fn new_consumer(name_server_addr: String, consume_group: String, topic: String, broker_stream: TcpStream, broker_id: i64) -> Self {
 

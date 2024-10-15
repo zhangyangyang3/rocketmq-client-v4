@@ -26,8 +26,12 @@ impl QueryConsumerOffsetRequestHeader {
         }
     }
 
+    pub fn to_command(&self) -> MqCommand {
+        MqCommand::new_with_body(QUERY_CONSUMER_OFFSET, vec![],self.to_bytes_1(), vec![])
+    }
+
     pub async fn send_request(&self, broker_stream: &mut TcpStream) -> i64 {
-        let req_data = MqCommand::new_with_body(QUERY_CONSUMER_OFFSET, vec![],self.to_bytes_1(), vec![]);
+        let req_data = self.to_command();
         let write = broker_stream.write_all(&req_data.to_bytes()).await;
         if write.is_err() {
             panic!("send request failed:{:?}", write);
