@@ -5,7 +5,7 @@ use log::{debug, info, warn};
 use tokio::io::{AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tokio::sync::mpsc::{Receiver, Sender};
 use crate::connection::{get_client_ip, MqConnection};
 use crate::consumer::message_handler::MessageHandler;
@@ -37,9 +37,9 @@ static mut SUBSCRIPTION_DATA: LazyLock<HashMap<String, SubscriptionData>> = Lazy
 );
 
 /// key=topic
-static mut CONSUMER_MAP: LazyLock<RefCell<HashMap<String, MqConsumer>>> = LazyLock::new(
+static mut CONSUMER_MAP: LazyLock<Arc<RwLock<HashMap<String, MqConsumer>>>> = LazyLock::new(
     || {
-        RefCell::new(HashMap::new())
+        Arc::new(RwLock::new(HashMap::new()))
     }
 );
 
@@ -50,15 +50,25 @@ static mut MESSAGE_QUEUE_MAP: LazyLock<RefCell<HashMap<String, i64>>> = LazyLock
     }
 );
 
-pub fn get_consumer_by_topic(topic: &str) -> Option<MqConsumer> {
+async fn get_consumer_by_topic(topic: &str) -> Option<MqConsumer> {
     unsafe {
-        return CONSUMER_MAP.borrow().get(topic).map(|mq| mq.clone());
+        let temp = CONSUMER_MAP.clone();
+        let read = temp.read().await;
+        let t =  read.get(topic);
+        if t.is_none() {
+            return None;
+        }
+        let t = t.unwrap();
+        return Some(t.clone());
     };
 }
 
-fn get_consumer_list() -> Vec<MqConsumer> {
+
+async fn get_consumer_list() -> Vec<MqConsumer> {
     unsafe {
-        return CONSUMER_MAP.borrow().values().map(|mq| mq.clone()).collect::<Vec<MqConsumer>>();
+        let temp = CONSUMER_MAP.clone();
+        let read = temp.read().await;
+        return read.values().map(|mq| mq.clone()).collect::<Vec<MqConsumer>>();
     }
 }
 
@@ -88,7 +98,12 @@ impl MqConsumer {
     }
 
     pub async fn start_consume(&self, do_consume: Arc<impl MessageHandler>) {
-        unsafe { CONSUMER_MAP.borrow_mut().insert(self.topic.clone(), self.clone()) };
+        unsafe {
+            let temp = CONSUMER_MAP.clone();
+            let mut write = temp.write().await;
+            write.insert(self.topic.clone(), self.clone())
+
+        };
         let cluster = MqConnection::get_cluster_info(self.name_server_addr.as_str()).await;
         let (tcp_stream, _) = MqConnection::get_broker_tcp_stream(&cluster).await;
         let mut rx = Self::new_cluster_consumer(tcp_stream).await;
@@ -195,7 +210,7 @@ impl MqConsumer {
     async fn send_heartbeat(tx: Sender<MqCommand>) {
         tokio::spawn(async move {
             loop {
-                let consumers = get_consumer_list();
+                let consumers = get_consumer_list().await;
                 for consumer in consumers {
                     let heartbeat_data = HeartbeatData::new_producer_data(consumer.client_id.clone(), consumer.consume_group.clone());
                     let heartbeat_data = heartbeat_data.to_json_bytes();
@@ -211,7 +226,7 @@ impl MqConsumer {
     async fn do_pull_message(tx: Sender<MqCommand>) {
         tokio::spawn(async move {
             loop {
-                let consumers = get_consumer_list();
+                let consumers = get_consumer_list().await;
                 for consumer in consumers {
                     if consumer.message_queues.is_empty() {
                         info!("fetch consumer message queue info:{:?}", consumer);
@@ -316,7 +331,9 @@ impl MqConsumer {
         let req_header = GetConsumerListByGroupRequestHeader::build_from_cmd(&req_cmd);
         let consumer_group = req_header.consumerGroup.as_str();
         unsafe {
-            for (_, v) in CONSUMER_MAP.borrow_mut().iter_mut() {
+            let temp = CONSUMER_MAP.clone();
+            let mut write = temp.write().await;
+            for (_, v) in write.iter_mut() {
                 if v.consume_group == consumer_group {
                     let consumer = v;
                     if !consumer_list.contains(&consumer.client_id) {
@@ -441,7 +458,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                             // todo should re consume
                         }
                     }
-                    match get_consumer_by_topic(temp.topic.as_str()) {
+                    match get_consumer_by_topic(temp.topic.as_str()).await {
                         None => {
                             warn!("topic:{}, no consumer.", temp.topic.as_str());
                         }
