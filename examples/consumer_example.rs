@@ -27,12 +27,9 @@ pub async fn main() {
     let (tcp_stream, id) = MqConnection::get_broker_tcp_stream(&cluster).await;
 
     info!("tcp stream:{:?}, id:{}", tcp_stream, id);
-    let mut consumer = MqConsumer::new_consumer(name_addr, "test1_group".to_string(), topic, tcp_stream, id);
-    let lock = Arc::new(RwLock::new(true));
-    let lock1 = lock.clone();
+    let mut consumer = MqConsumer::new_consumer(name_addr, "test1_group".to_string(), topic);
     let handle = Arc::new(Handler {});
-    tokio::spawn(async move {consumer.pull_message(handle, lock).await;});
+    tokio::spawn(async move {consumer.start_consume(handle).await;});
     tokio::time::sleep(Duration::from_secs(60)).await;
-    *lock1.write().await = false;
 
 }

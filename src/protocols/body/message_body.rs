@@ -4,7 +4,7 @@ use bytes::{Buf, Bytes};
 use log::warn;
 use zip::ZipArchive;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct MessageBody {
     // base
