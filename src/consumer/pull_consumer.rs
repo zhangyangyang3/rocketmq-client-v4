@@ -17,7 +17,7 @@ use crate::protocols::header::pull_message_request_header::PullMessageRequestHea
 use crate::protocols::header::pull_message_response_header::PullMessageResponseHeader;
 use crate::protocols::header::query_consumer_offset_request_header::QueryConsumerOffsetRequestHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
-use crate::protocols::{ PermName, request_code, response_code, SerializeDeserialize };
+use crate::protocols::{PermName, request_code, response_code, SerializeDeserialize};
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
 use crate::protocols::header::notify_consumer_ids_changed_request_header::NotifyConsumerIdsChangedRequestHeader;
 use crate::protocols::header::query_consumer_offset_response_header::QueryConsumerOffsetResponseHeader;
@@ -52,9 +52,8 @@ static mut MESSAGE_QUEUE_MAP: LazyLock<RefCell<HashMap<String, i64>>> = LazyLock
 
 pub fn get_consumer_by_topic(topic: &str) -> Option<MqConsumer> {
     unsafe {
-        return CONSUMER_MAP.borrow().get(topic).map(|mq| mq.clone() );
+        return CONSUMER_MAP.borrow().get(topic).map(|mq| mq.clone());
     };
-
 }
 
 fn get_consumer_list() -> Vec<MqConsumer> {
@@ -72,14 +71,12 @@ pub struct MqConsumer {
     pub topic: String,
     pub broadcast: bool,
     pub client_addr: String,
-    pub message_queues: Vec<MessageQueue>
+    pub message_queues: Vec<MessageQueue>,
 }
 
 
-
 impl MqConsumer {
-
-    pub async fn new_cluster_consumer(broker_stream: TcpStream)-> Receiver<MessageBody> {
+    pub async fn new_cluster_consumer(broker_stream: TcpStream) -> Receiver<MessageBody> {
         let (tx, rx) = mpsc::channel::<MqCommand>(1024);
         let (consumer_tx, consumer_rx) = mpsc::channel::<MessageBody>(1024);
         let (read_half, write) = broker_stream.into_split();
@@ -109,14 +106,13 @@ impl MqConsumer {
     }
 
     async fn read_cmd_from_mq(mut read_half: OwnedReadHalf, consumer_tx: Sender<MessageBody>, tx: Sender<MqCommand>) {
-        tokio::spawn(async move {
+         tokio::spawn(async move {
             loop {
                 let mq_command = MqCommand::read_from_read_half(&mut read_half).await;
                 unsafe {
                     if OPAQUE_TABLE.borrow_mut().contains_key(&mq_command.opaque) {
                         let req_cmd = OPAQUE_TABLE.borrow_mut().remove(&mq_command.opaque).unwrap();
                         match req_cmd.req_code {
-
                             request_code::PULL_MESSAGE => {
                                 do_consume_message(req_cmd, consumer_tx.clone(), tx.clone()).await;
                             }
@@ -125,12 +121,12 @@ impl MqConsumer {
                                 debug!("send heart beat. resp code:{:?}. remark:{:?}", mq_command.req_code, mq_command.r_body);
                             }
 
-                            request_code:: QUERY_CONSUMER_OFFSET => {
+                            request_code::QUERY_CONSUMER_OFFSET => {
                                 let req = QueryConsumerOffsetRequestHeader::convert_from_cmd(&req_cmd);
                                 let offset = QueryConsumerOffsetResponseHeader::convert_from_command(mq_command);
                                 let offset = match offset {
-                                    None => {-1}
-                                    Some(o) => {o.offset}
+                                    None => { -1 }
+                                    Some(o) => { o.offset }
                                 };
                                 if offset >= 0 {
                                     let key = format!("{}_{}", req.topic, req.queueId);
@@ -151,7 +147,7 @@ impl MqConsumer {
                             request_code::GET_CONSUMER_STATUS_FROM_CLIENT => {
                                 // send client running info to server
                             }
-                            request_code:: NOTIFY_CONSUMER_IDS_CHANGED => {
+                            request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
                                 // re balance
                                 let header = NotifyConsumerIdsChangedRequestHeader::convert_from_cmd(&mq_command);
                                 let consume_group = header.consumer_group.as_str();
@@ -172,11 +168,10 @@ impl MqConsumer {
                 }
                 Self::sleep(50).await;
             }
-
         });
     }
 
-    async fn send_cmd_to_mq(mut rx: Receiver<MqCommand>,mut write: OwnedWriteHalf) {
+    async fn send_cmd_to_mq(mut rx: Receiver<MqCommand>, mut write: OwnedWriteHalf) {
         tokio::spawn(async move {
             loop {
                 let cmd: MqCommand = rx.recv().await.unwrap();
@@ -194,14 +189,11 @@ impl MqConsumer {
     }
 
 
-
     ///
     /// send heartbeat to server every 10 second.
     ///
     async fn send_heartbeat(tx: Sender<MqCommand>) {
-
         tokio::spawn(async move {
-
             loop {
                 let consumers = get_consumer_list();
                 for consumer in consumers {
@@ -219,33 +211,32 @@ impl MqConsumer {
     async fn do_pull_message(tx: Sender<MqCommand>) {
         tokio::spawn(async move {
             loop {
-                unsafe {
-                    for (_, consumer) in CONSUMER_MAP.borrow().iter() {
-                        if consumer.message_queues.is_empty() {
-                            info!("fetch consumer message queue info:{:?}", consumer);
-                            let cmd = GetConsumerListByGroupRequestHeader::new(consumer.consume_group.clone()).to_command();
+                let consumers = get_consumer_list();
+                for consumer in consumers {
+                    if consumer.message_queues.is_empty() {
+                        info!("fetch consumer message queue info:{:?}", consumer);
+                        let cmd = GetConsumerListByGroupRequestHeader::new(consumer.consume_group.clone()).to_command();
+                        tx.send(cmd).await.unwrap();
+                        continue;
+                    }
+
+                    for queue in consumer.message_queues.iter() {
+                        let offset = unsafe {
+                            info!("fetch queue offset. queue:{:?}", queue);
+                            let key = format!("{}_{}", queue.topic.as_str(), queue.queueId);
+                            MESSAGE_QUEUE_MAP.borrow().get(&key).unwrap_or(&-1).clone()
+                        };
+                        if offset < 0 {
+                            let cmd = QueryConsumerOffsetRequestHeader
+                            ::new(consumer.consume_group.clone(), consumer.topic.clone(), queue.queueId)
+                                .to_command();
                             tx.send(cmd).await.unwrap();
                             continue;
                         }
-
-                        for queue in consumer.message_queues.iter() {
-                            let offset = {
-                                info!("fetch queue offset. queue:{:?}", queue);
-                                let key = format!("{}_{}", queue.topic.as_str(), queue.queueId);
-                                MESSAGE_QUEUE_MAP.borrow().get(&key).unwrap_or(&-1).clone()
-                            };
-                            if offset < 0 {
-                                let cmd = QueryConsumerOffsetRequestHeader
-                                ::new(consumer.consume_group.clone(),consumer.topic.clone(), queue.queueId)
-                                    .to_command();
-                                tx.send(cmd).await.unwrap();
-                                continue;
-                            }
-                            // pull message
-                            let cmd = PullMessageRequestHeader::new(consumer.consume_group.clone(),
-                                                                    consumer.topic.clone(), queue.queueId, offset, 0).to_command();
-                            tx.send(cmd).await.unwrap();
-                        }
+                        // pull message
+                        let cmd = PullMessageRequestHeader::new(consumer.consume_group.clone(),
+                                                                consumer.topic.clone(), queue.queueId, offset, 0).to_command();
+                        tx.send(cmd).await.unwrap();
                     }
                 }
                 Self::sleep(50).await;
@@ -254,7 +245,6 @@ impl MqConsumer {
     }
 
     pub fn new_consumer(name_server_addr: String, consume_group: String, topic: String) -> Self {
-
         let client_addr = get_client_ip();
         let mut client_id = String::from(&client_addr);
         client_id.push_str("@");
@@ -349,7 +339,7 @@ impl MqConsumer {
         }
     }
 
-    async fn calc_used_queues(consumer_list: &Vec<String>, consumer: &MqConsumer) -> Vec<MessageQueue>{
+    async fn calc_used_queues(consumer_list: &Vec<String>, consumer: &MqConsumer) -> Vec<MessageQueue> {
         let mut used_mqs: Vec<MessageQueue> = vec![];
         if !consumer_list.contains(&consumer.client_id) {
             warn!("current client id not in consumer list, current client id:{}, total list:{:?}", &consumer.client_id, &consumer_list);
@@ -363,7 +353,7 @@ impl MqConsumer {
         }
         let mut idx = 0;
         for i in 0..consumer_list.len() {
-            if consumer_list[i] ==  consumer.client_id {
+            if consumer_list[i] == consumer.client_id {
                 idx = i;
             }
         }
@@ -386,7 +376,7 @@ impl MqConsumer {
             total_message_queue.len() - start_idx
         };
         for i in 0..range {
-            let t = &total_message_queue[(start_idx + i)%total_message_queue.len()];
+            let t = &total_message_queue[(start_idx + i) % total_message_queue.len()];
 
             used_mqs.push(MessageQueue::new_from_ref(t));
         }
@@ -397,8 +387,6 @@ impl MqConsumer {
     async fn sleep(ms: u64) {
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
     }
-
-
 }
 
 pub async fn fetch_message_queue(name_server: &str, topic: &str) -> Vec<MessageQueue> {
@@ -468,19 +456,19 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                     debug!("does not get message:{}", r_body);
                 }
             }
-
         }
         _ => {
             warn!("not support response code:{}, message:{:?}", cmd.req_code, String::from_utf8(cmd.r_body));
         }
-    }}
+    }
+}
 
 
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
     use std::time::Duration;
-    use log::{ info, LevelFilter};
+    use log::{info, LevelFilter};
     use time::UtcOffset;
     use tokio::sync::RwLock;
     use crate::connection::MqConnection;
@@ -493,8 +481,9 @@ mod test {
 
 
     struct Handler {}
+
     impl super::MessageHandler for Handler {
-        async fn handle(&self, message: &super::MessageBody){
+        async fn handle(&self, message: &super::MessageBody) {
             info!("message body:{:?}", String::from_utf8(message.body.clone()));
         }
     }
@@ -512,9 +501,7 @@ mod test {
         // let mut consumer = MqConsumer::new_consumer(name_addr, "T_PushNoticeMessage_group".to_string(), topic, tcp_stream, id);
         let mut consumer = MqConsumer::new_consumer(name_addr, "consume_pushNoticeMessage_test_1".to_string(), topic);
         let handle = Arc::new(Handler {});
-        tokio::spawn(async move {consumer.start_consume(handle).await;});
+        tokio::spawn(async move { consumer.start_consume(handle).await; });
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
-
-
 }
