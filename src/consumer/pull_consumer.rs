@@ -18,6 +18,7 @@ use crate::protocols::header::pull_message_response_header::PullMessageResponseH
 use crate::protocols::header::query_consumer_offset_request_header::QueryConsumerOffsetRequestHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
 use crate::protocols::{PermName, request_code, response_code, SerializeDeserialize};
+use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
 use crate::protocols::header::notify_consumer_ids_changed_request_header::NotifyConsumerIdsChangedRequestHeader;
 use crate::protocols::header::query_consumer_offset_response_header::QueryConsumerOffsetResponseHeader;
@@ -129,7 +130,7 @@ impl MqConsumer {
                         let req_cmd = OPAQUE_TABLE.borrow_mut().remove(&mq_command.opaque).unwrap();
                         match req_cmd.req_code {
                             request_code::PULL_MESSAGE => {
-                                do_consume_message(req_cmd, consumer_tx.clone(), tx.clone()).await;
+                                do_consume_message(mq_command, consumer_tx.clone(), tx.clone()).await;
                             }
 
                             request_code::HEART_BEAT => {
@@ -165,7 +166,7 @@ impl MqConsumer {
                             request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
                                 // re balance
                                 let header = NotifyConsumerIdsChangedRequestHeader::convert_from_cmd(&mq_command);
-                                let consume_group = header.consumer_group.as_str();
+                                let consume_group = header.consumerGroup.as_str();
 
                                 let req = GetConsumerListByGroupRequestHeader::new(consume_group.to_string()).to_command();
                                 tx.send(req).await.unwrap();
@@ -212,7 +213,12 @@ impl MqConsumer {
             loop {
                 let consumers = get_consumer_list().await;
                 for consumer in consumers {
-                    let heartbeat_data = HeartbeatData::new_producer_data(consumer.client_id.clone(), consumer.consume_group.clone());
+                    let heartbeat_data = HeartbeatData::new_push_consumer_data(consumer.client_id.clone(),
+                                                                               consumer.consume_group.clone(),
+                                                                               CONSUME_FROM_LAST_OFFSET,
+                                                                               SubscriptionData::simple_new(consumer.topic.clone()),
+                                                                               MESSAGE_MODEL_CLUSTER.to_string()
+                    );
                     let heartbeat_data = heartbeat_data.to_json_bytes();
                     let heartbeat_cmd = MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], heartbeat_data);
                     tx.send(heartbeat_cmd).await.unwrap();
@@ -437,11 +443,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
     let mut offset = 0;
     if response_header.is_some() {
         let response_header = response_header.unwrap();
-        offset = if response_header.nextBeginOffset.is_none() {
-            response_header.offset.unwrap()
-        } else {
-            response_header.nextBeginOffset.unwrap()
-        };
+        offset = response_header.nextBeginOffset.unwrap();
     }
     match cmd.req_code {
         response_code::SUCCESS => {
@@ -487,7 +489,6 @@ mod test {
     use std::time::Duration;
     use log::{info, LevelFilter};
     use time::UtcOffset;
-    use tokio::sync::RwLock;
     use crate::connection::MqConnection;
     use crate::consumer::pull_consumer::MqConsumer;
 
@@ -510,13 +511,7 @@ mod test {
         init_logger();
         let name_addr = "192.168.3.49:9876".to_string();
         let topic = "pushNoticeMessage_To".to_string();
-
-        let cluster = MqConnection::get_cluster_info(&name_addr).await;
-        let (tcp_stream, id) = MqConnection::get_broker_tcp_stream(&cluster).await;
-
-        info!("tcp stream:{:?}, id:{}", tcp_stream, id);
-        // let mut consumer = MqConsumer::new_consumer(name_addr, "T_PushNoticeMessage_group".to_string(), topic, tcp_stream, id);
-        let mut consumer = MqConsumer::new_consumer(name_addr, "consume_pushNoticeMessage_test_1".to_string(), topic);
+        let consumer = MqConsumer::new_consumer(name_addr, "consume_pushNoticeMessage_test_2".to_string(), topic);
         let handle = Arc::new(Handler {});
         tokio::spawn(async move { consumer.start_consume(handle).await; });
         tokio::time::sleep(Duration::from_secs(60)).await;

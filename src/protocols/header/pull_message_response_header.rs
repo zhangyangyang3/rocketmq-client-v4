@@ -14,12 +14,19 @@ pub struct PullMessageResponseHeader {
     pub nextBeginOffset: Option<i64>,
     pub minOffset: Option<i64>,
     pub maxOffset: Option<i64>,
-    pub offset: Option<i64>,
 }
 impl PullMessageResponseHeader {
 
-
+    pub fn convert_from_cmd() -> Self {
+        return Self {
+            suggestWhichBrokerId: None,
+            nextBeginOffset: None,
+            minOffset: None,
+            maxOffset: None,
+        }
+    }
     pub fn bytes_to_header(serialize_method: u8, bytes: Vec<u8>)-> Option<Box<Self>>  {
+        debug!("PullMessageResponseHeader, method:{}, data:{:?}",serialize_method, String::from_utf8(bytes.clone()));
         if serialize_method == HEADER_SERIALIZE_METHOD_JSON {
             Self::bates_json_to_header(bytes)
         } else {
@@ -65,21 +72,12 @@ impl PullMessageResponseHeader {
             }
         };
 
-        let offset: Option<i64> = match json.get("offset") {
-            None => {
-                None
-            }
-            Some(v) => {
-                v.as_str().unwrap().parse().ok()
-            }
-        };
 
         Some(Box::new(Self {
             suggestWhichBrokerId: swbid,
             nextBeginOffset: next_begin_offset,
             minOffset: min_offset,
             maxOffset: max_offset,
-            offset,
         }))
     }
 
@@ -153,7 +151,6 @@ impl SerializeDeserialize for PullMessageResponseHeader {
             nextBeginOffset: next_begin_offset,
             minOffset: min_offset,
             maxOffset: max_offset,
-            offset,
         }))
     }
 

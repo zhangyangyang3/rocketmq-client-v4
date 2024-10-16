@@ -2,7 +2,7 @@ use log::{debug, info};
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
-use crate::protocols::body::consumer_data::{CONSUME_TYPE_PULL, CONSUME_TYPE_PUSH, ConsumerData};
+use crate::protocols::body::consumer_data::{CONSUME_TYPE_PUSH, ConsumerData};
 use crate::protocols::body::producer_data::ProducerData;
 use crate::protocols::body::subscription_data::SubscriptionData;
 use crate::protocols::mq_command::MqCommand;
@@ -28,7 +28,7 @@ impl HeartbeatData {
         }
     }
 
-    pub fn new_pull_consumer_data(client_id: String,
+    pub fn new_push_consumer_data(client_id: String,
                                   group_name: String,
                                   consume_from_where: i32,
                                   subscription_data: SubscriptionData,
@@ -42,26 +42,6 @@ impl HeartbeatData {
                 consumeFromWhere: consume_from_where,
                 subscriptionDataSet: vec![subscription_data],
                 consumeType: CONSUME_TYPE_PUSH.to_string(),
-                messageModel: message_model,
-                unitMode: false,
-            }],
-        }
-    }
-
-    pub fn new_push_consumer_data(client_id: String,
-                                  group_name: String,
-                                  consume_from_where: i32,
-                                  subscription_data: SubscriptionData,
-                                  message_model: String
-    ) -> Self {
-        HeartbeatData {
-            clientID: client_id,
-            producerDataSet: vec![],
-            consumerDataSet: vec![ConsumerData {
-                groupName: group_name,
-                consumeFromWhere: consume_from_where,
-                subscriptionDataSet: vec![subscription_data],
-                consumeType: CONSUME_TYPE_PULL.to_string(),
                 messageModel: message_model,
                 unitMode: false,
             }],

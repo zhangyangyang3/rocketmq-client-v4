@@ -1,4 +1,5 @@
 use bytes::{Buf, Bytes};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -21,8 +22,8 @@ impl QueryConsumerOffsetRequestHeader {
     pub fn new(consumer_group: String, topic: String, queue_id: i32) -> Self {
        Self {
             consumerGroup: consumer_group,
-            topic,
-            queueId: queue_id
+            queueId: queue_id,
+            topic
         }
     }
 
@@ -42,7 +43,10 @@ impl QueryConsumerOffsetRequestHeader {
     }
 
     pub fn convert_from_cmd(cmd: &MqCommand) -> Self {
-        let body = &cmd.body;
+        //  e_body:Ok(\"\\0\\rconsumerGroup\\0\\0\\0 consume_pushNoticeMessage_test_2\\0\\u{7}queueId\\0\\0\\0\\u{1}0\\0\\u{5}topic\\0\\0\\0\\u{14}pushNoticeMessage_To\")
+        debug!("QueryConsumerOffsetRequestHeader: body:{:?}, r_body:{:?}, e_body:{:?}", String::from_utf8(cmd.body.clone()),
+            String::from_utf8(cmd.r_body.clone()), String::from_utf8(cmd.e_body.clone()));
+        let body = &cmd.e_body;
         let mut body = Bytes::copy_from_slice(body);
 
         let consumer_group_len = body.get_i16();
@@ -50,22 +54,26 @@ impl QueryConsumerOffsetRequestHeader {
         let consumer_group_v_len = body.get_i32();
         let consumer_group_body = body.copy_to_bytes(consumer_group_v_len as usize);
 
-        let topic_key_len = body.get_i16();
-        let _ = body.copy_to_bytes(topic_key_len as usize);
-        let topic_value_len = body.get_i32();
-        let topic_body = body.copy_to_bytes(topic_value_len as usize);
-
         let queue_id_key_len = body.get_i16();
         let _ =body.copy_to_bytes(queue_id_key_len as usize);
         let queue_id_value_len = body.get_i32();
         let queue_id_body = body.copy_to_bytes(queue_id_value_len as usize);
         let queue_id = ConvertUtil::convert_string_bytes_to_i32(queue_id_body.to_vec());
 
-        Self {
+        let topic_key_len = body.get_i16();
+        let _ = body.copy_to_bytes(topic_key_len as usize);
+        let topic_value_len = body.get_i32();
+        let topic_body = body.copy_to_bytes(topic_value_len as usize);
+
+
+        let ret = Self {
             consumerGroup: String::from_utf8(consumer_group_body.to_vec()).unwrap(),
             topic: String::from_utf8(topic_body.to_vec()).unwrap(),
             queueId: queue_id
-        }
+        };
+        debug!("QueryConsumerOffsetRequestHeader:{:?}", ret );
+
+        ret
 
     }
 
