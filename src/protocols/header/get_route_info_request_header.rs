@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -34,14 +34,14 @@ impl GetRouteInfoRequestHeader {
         let cmd = MqCommand::read_from_stream_with_opaque(name_server, opa).await ;
 
 
-            debug!("get_topic_route_data req opa:{}, resp opa{}",opa , cmd.opaque);
+        debug!("get_topic_route_data req opa:{}, resp opa{}",opa , cmd.opaque);
         return match cmd.req_code {
                 response_code::SUCCESS => {
-                    debug!("before fixed:{:?}", String::from_utf8(cmd.body.clone()).unwrap());
+                    // debug!("before fixed:{:?}", String::from_utf8(cmd.body.clone()).unwrap());
                     let body = fixed_un_standard_json(&cmd.body);
-                    debug!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
+                    // debug!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
                     let data: TopicRouteData = serde_json::from_slice(&body).unwrap();
-                    info!("topic route info:{:?}", data);
+                    debug!("topic route info:{:?}", data);
                     return Some(data);
                 }
                 _ => {

@@ -1,5 +1,5 @@
 use local_ip_address::local_ip;
-use log::info;
+use log::{debug, info};
 use tokio::net::TcpStream;
 use crate::protocols::body::cluster_info::ClusterInfo;
 use crate::protocols::body::topic_route_data::TopicRouteData;
@@ -29,8 +29,6 @@ impl MqConnection {
             panic!("connection to mq failed {:?}", name_server_socket);
         }
         let mut name_server_stream = name_server_socket.unwrap();
-        info!("stream:{:?}", name_server_stream);
-
         ClusterInfo::get_cluster_info(&mut name_server_stream).await
     }
 
@@ -84,7 +82,7 @@ impl MqConnection {
             panic!("connection to mq failed {:?}", name_server_socket);
         }
         let mut name_server_stream = name_server_socket.unwrap();
-        info!("stream:{:?}", name_server_stream);
+        debug!("stream:{:?}", name_server_stream);
 
         let req_data = GetRouteInfoRequestHeader::get_route_info_request(topic);
         req_data.get_topic_route_data(&mut name_server_stream).await

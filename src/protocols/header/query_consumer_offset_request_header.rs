@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes};
-use log::{debug, info};
+use log::{debug};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
