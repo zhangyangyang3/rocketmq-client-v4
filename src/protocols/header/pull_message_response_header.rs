@@ -137,14 +137,6 @@ impl SerializeDeserialize for PullMessageResponseHeader {
             }
         };
 
-        let offset: Option<i64> = match value.get("offset") {
-            None => {
-                None
-            }
-            Some(va) => {
-                Some(va.parse().unwrap())
-            }
-        };
 
         Some(Box::new(Self {
             suggestWhichBrokerId: suggest_which_broker_id,
