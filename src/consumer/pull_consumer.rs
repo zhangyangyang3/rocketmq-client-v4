@@ -45,9 +45,9 @@ static mut CONSUMER_MAP: LazyLock<Arc<RwLock<HashMap<String, MqConsumer>>>> = La
 );
 
 /// key = topic + _ + queue_id , value=offset
-static mut MESSAGE_QUEUE_MAP: LazyLock<RefCell<HashMap<String, i64>>> = LazyLock::new(
+static mut MESSAGE_QUEUE_MAP: LazyLock<Arc<RwLock<HashMap<String, i64>>>> = LazyLock::new(
     || {
-        RefCell::new(HashMap::new())
+        Arc::new(RwLock::new(HashMap::new()))
     }
 );
 
@@ -154,12 +154,20 @@ impl MqConsumer {
                                 };
                                 if offset >= 0 {
                                     let key = format!("{}_{}", req.topic, req.queueId);
-                                    MESSAGE_QUEUE_MAP.borrow_mut().insert(key, offset);
+                                    {
+                                        let queue = MESSAGE_QUEUE_MAP.clone();
+                                        let mut queue = queue.write().await;
+                                        (*queue).insert(key, offset);
+                                    }
                                 }
                             }
 
                             request_code::GET_CONSUMER_LIST_BY_GROUP => {
                                 Self::do_balance(&req_cmd, &mq_command).await;
+                            }
+
+                            request_code::UPDATE_CONSUMER_OFFSET => {
+                                // update offset
                             }
 
                             _ => {
@@ -258,22 +266,25 @@ impl MqConsumer {
                         info!("fetch consumer message queue info:{:?}", consumer);
                         let cmd = GetConsumerListByGroupRequestHeader::new(consumer.consume_group.clone()).to_command();
                         tx.send(cmd).await.unwrap();
-                        Self::sleep(50).await;
+                        Self::sleep(100).await;
                         continue;
                     }
 
                     for queue in consumer.message_queues.iter() {
                         let offset = unsafe {
                             let key = format!("{}_{}", queue.topic.as_str(), queue.queueId);
-                            MESSAGE_QUEUE_MAP.borrow().get(&key).unwrap_or(&-1).clone()
+                            let map = MESSAGE_QUEUE_MAP.clone();
+                            let map = map.read().await;
+                            map.get(&key).unwrap_or(&-1).clone()
                         };
+                        info!("queue:{:?}, offset:{:?}", queue, offset);
                         if offset < 0 {
                             info!("fetch queue offset. queue:{:?}", queue);
                             let cmd = QueryConsumerOffsetRequestHeader
                             ::new(consumer.consume_group.clone(), consumer.topic.clone(), queue.queueId)
                                 .to_command();
                             tx.send(cmd).await.unwrap();
-                            Self::sleep(50).await;
+                            Self::sleep(100).await;
                             continue;
                         }
                         // pull message
@@ -497,6 +508,9 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                     debug!("does not get message:{}", r_body);
                 }
             }
+        }
+        response_code::PULL_NOT_FOUND => {
+            debug!("no message found");
         }
         _ => {
             warn!("not support response code:{}, message:{:?}", cmd.req_code, String::from_utf8(cmd.r_body));
