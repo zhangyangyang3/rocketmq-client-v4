@@ -1,4 +1,5 @@
-use bytes::{BufMut, BytesMut};
+use std::collections::HashMap;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::debug;
 use serde::{Serialize};
 use serde_json::Value;
@@ -53,6 +54,20 @@ pub trait SerializeDeserialize {
 
     fn bytes_1_to_header(_bytes: Vec<u8>) -> Option<Box<Self>> {
         None
+    }
+
+    fn bytes_1_to_map(bytes: Vec<u8>) -> HashMap<String,String> {
+        let mut bytes = Bytes::from(bytes);
+        let mut value = HashMap::new();
+        while bytes.remaining() > 0 {
+            let key1_len = bytes.get_i16();
+            let key1 = bytes.copy_to_bytes(key1_len as usize);
+
+            let v1_len = bytes.get_i32();
+            let v1 = bytes.copy_to_bytes(v1_len as usize).to_vec();
+            value.insert(String::from_utf8(key1.to_vec()).unwrap(), String::from_utf8(v1.to_vec()).unwrap());
+        }
+        value
     }
 
     fn to_json_bytes(&self) -> Vec<u8> where Self: Serialize {

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use log::{debug, info, warn};
@@ -24,9 +23,9 @@ use crate::protocols::header::notify_consumer_ids_changed_request_header::Notify
 use crate::protocols::header::query_consumer_offset_response_header::QueryConsumerOffsetResponseHeader;
 use crate::protocols::mq_command::MqCommand;
 
-static mut OPAQUE_TABLE: LazyLock<RefCell<HashMap<i32, MqCommand>>> = LazyLock::new(
+static mut OPAQUE_TABLE: LazyLock<Arc<RwLock<HashMap<i32, MqCommand>>>> = LazyLock::new(
     || {
-        RefCell::new(HashMap::new())
+        Arc::new(RwLock::new(HashMap::new()))
     }
 );
 
@@ -134,8 +133,10 @@ impl MqConsumer {
                 }
                 let mq_command = MqCommand::read_from_read_half(&mut read_half).await;
                 unsafe {
-                    if OPAQUE_TABLE.borrow_mut().contains_key(&mq_command.opaque) {
-                        let req_cmd = OPAQUE_TABLE.borrow_mut().remove(&mq_command.opaque).unwrap();
+                    let opaque_map = OPAQUE_TABLE.clone();
+                    let mut opaque_map = opaque_map.write().await;
+                    if opaque_map.contains_key(&mq_command.opaque) {
+                        let req_cmd = opaque_map.remove(&mq_command.opaque).unwrap();
                         match req_cmd.req_code {
                             request_code::PULL_MESSAGE => {
                                 do_consume_message(mq_command, consumer_tx.clone(), tx.clone()).await;
@@ -168,6 +169,12 @@ impl MqConsumer {
 
                             request_code::UPDATE_CONSUMER_OFFSET => {
                                 // update offset
+                                let header = UpdateConsumerOffsetRequestHeader::convert_from_command(&req_cmd);
+                                let key = format!("{}_{}", header.topic, header.queueId);
+                                let queue = MESSAGE_QUEUE_MAP.clone();
+                                let mut queue = queue.write().await;
+                                queue.insert(key, header.commitOffset);
+
                             }
 
                             _ => {
@@ -215,7 +222,11 @@ impl MqConsumer {
                 let req_code = cmd.req_code;
                 let opaque = cmd.opaque;
 
-                unsafe { OPAQUE_TABLE.borrow_mut().insert(cmd.opaque, cmd); }
+                unsafe {
+                    let map = OPAQUE_TABLE.clone();
+                    let mut map = map.write().await;
+                    (*map).insert(cmd.opaque, cmd);
+                }
                 let w = write.write_all(&bytes).await;
                 if w.is_err() {
                     warn!("write to rocketmq failed, req_code:{}, opaque:{}, err:{:?}", req_code, opaque, w.err())
@@ -277,7 +288,7 @@ impl MqConsumer {
                             let map = map.read().await;
                             map.get(&key).unwrap_or(&-1).clone()
                         };
-                        info!("queue:{:?}, offset:{:?}", queue, offset);
+                        // info!("queue:{:?}, offset:{:?}", queue, offset);
                         if offset < 0 {
                             info!("fetch queue offset. queue:{:?}", queue);
                             let cmd = QueryConsumerOffsetRequestHeader
@@ -472,7 +483,7 @@ pub async fn fetch_message_queue(name_server: &str, topic: &str) -> Vec<MessageQ
 
 async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd_sender: Sender<MqCommand>) {
     let response_header = PullMessageResponseHeader::bytes_to_header(cmd.header_serialize_method, cmd.e_body);
-    info!("pull message response header:{:?}", &response_header);
+    debug!("pull message response header:{:?}", &response_header);
     let mut offset = 0;
     if response_header.is_some() {
         let response_header = response_header.unwrap();
@@ -555,8 +566,8 @@ mod test {
         tokio::time::sleep(Duration::from_secs(10)).await;
         let mut run = lock.write().await;
         *run = false;
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        info!("quit the test")
     }
 
     #[test]

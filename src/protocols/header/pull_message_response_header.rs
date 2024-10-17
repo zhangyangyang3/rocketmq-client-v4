@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use bytes::{Buf, Bytes};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -91,16 +89,7 @@ impl SerializeDeserialize for PullMessageResponseHeader {
         }
 
 
-        let mut bytes = Bytes::from(bytes);
-        let mut value = HashMap::new();
-        while bytes.remaining() > 0 {
-            let key1_len = bytes.get_i16();
-            let key1 = bytes.copy_to_bytes(key1_len as usize);
-
-            let v1_len = bytes.get_i32();
-            let v1 = bytes.copy_to_bytes(v1_len as usize).to_vec();
-            value.insert(String::from_utf8(key1.to_vec()).unwrap(), String::from_utf8(v1.to_vec()).unwrap());
-        }
+        let value = Self::bytes_1_to_map(bytes);
         let suggest_which_broker_id: Option<i64> = match value.get("suggestWhichBrokerId") {
             None => {
                 None
