@@ -1,4 +1,3 @@
-use log::info;
 use serde_json::Value;
 use crate::protocols::mq_command::MqCommand;
 use crate::protocols::{mq_command, SerializeDeserialize};
