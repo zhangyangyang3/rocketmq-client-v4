@@ -21,7 +21,7 @@ pub trait SerializeDeserialize {
         match value {
             Value::Object(map) => {
                 let mut buf = BytesMut::with_capacity(128);
-                debug!("header map:{:?}", &map);
+                // debug!("header map:{:?}", &map);
                 for (k, v) in map {
 
                     let v = if v.is_string() {
