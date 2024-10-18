@@ -16,7 +16,7 @@ use crate::protocols::header::pull_message_request_header::PullMessageRequestHea
 use crate::protocols::header::pull_message_response_header::PullMessageResponseHeader;
 use crate::protocols::header::query_consumer_offset_request_header::QueryConsumerOffsetRequestHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
-use crate::protocols::{get_current_time_millis, PermName, request_code, response_code, SerializeDeserialize};
+use crate::protocols::{get_current_time_millis, PermName, request_code, response_code, SerializeDeserialize, sleep};
 use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
 use crate::protocols::body::consumer_running_info::ConsumerRunningInfo;
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
@@ -189,6 +189,10 @@ impl MqConsumer {
 
                             }
 
+                            response_code::SUCCESS => {
+                                info!("get server resp. req cmd:{:?}", req_cmd.req_code);
+                            }
+
                             _ => {
                                 warn!("unsupported request, code:{}, opaque:{}", req_cmd.req_code, req_cmd.opaque);
                             }
@@ -230,7 +234,7 @@ impl MqConsumer {
                         }
                     }
                 }
-                Self::sleep(50).await;
+                Self::sleep(100).await;
             }
         });
     }
@@ -543,11 +547,13 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                 }
                 _ => {
                     debug!("does not get message:{}", r_body);
+                    sleep(1000)
                 }
             }
         }
         response_code::PULL_NOT_FOUND => {
             debug!("no message found");
+            sleep(2000)
         }
         _ => {
             warn!("not support response code:{}, message:{:?}", cmd.req_code, String::from_utf8(cmd.r_body));
