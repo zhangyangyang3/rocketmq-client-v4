@@ -170,6 +170,7 @@ impl MqCommand {
 
 
     pub async fn read_from_read_half(stream:&mut OwnedReadHalf) -> Self {
+        stream.readable().await.unwrap();
         let size = stream.read_i32().await;
         if size.is_err() {
             panic!("read command from mq failed! {:?}", size.err());
