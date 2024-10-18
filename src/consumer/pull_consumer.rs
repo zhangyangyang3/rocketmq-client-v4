@@ -190,7 +190,9 @@ impl MqConsumer {
                             }
 
                             response_code::SUCCESS => {
-                                info!("get server resp. req cmd:{:?}", req_cmd.req_code);
+                                info!("get server resp. req cmd:{:?}, opaque:{:?},remark:{:?}, extend:{:?}, body:{:?}"
+                                    , req_cmd.req_code, req_cmd.opaque, String::from_utf8(req_cmd.r_body)
+                                    , String::from_utf8(req_cmd.e_body), String::from_utf8(req_cmd.body));
                             }
 
                             _ => {
@@ -198,10 +200,9 @@ impl MqConsumer {
                             }
                         }
                     } else {
+                        warn!("get server request:{:?},opaque:{}", mq_command.req_code,mq_command.opaque );
                         match mq_command.req_code {
-                            request_code::GET_CONSUMER_STATUS_FROM_CLIENT => {
-                                // send client running info to server
-                            }
+
                             request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
                                 // re balance
                                 let header = NotifyConsumerIdsChangedRequestHeader::convert_from_cmd(&mq_command);
@@ -234,7 +235,7 @@ impl MqConsumer {
                         }
                     }
                 }
-                Self::sleep(100).await;
+                Self::sleep(5).await;
             }
         });
     }
@@ -306,7 +307,7 @@ impl MqConsumer {
                         info!("fetch consumer message queue info:{:?}", consumer);
                         let cmd = GetConsumerListByGroupRequestHeader::new(consumer.consume_group.clone()).to_command();
                         tx.send(cmd).await.unwrap();
-                        Self::sleep(100).await;
+                        Self::sleep(10).await;
                         continue;
                     }
 
@@ -324,7 +325,7 @@ impl MqConsumer {
                             ::new(consumer.consume_group.clone(), consumer.topic.clone(), queue.queueId)
                                 .to_command();
                             tx.send(cmd).await.unwrap();
-                            Self::sleep(100).await;
+                            Self::sleep(10).await;
                             continue;
                         }
                         // pull message
@@ -333,7 +334,7 @@ impl MqConsumer {
                         tx.send(cmd).await.unwrap();
                     }
                 }
-                Self::sleep(100).await;
+                Self::sleep(10000).await;
             }
         });
     }
@@ -547,13 +548,13 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                 }
                 _ => {
                     debug!("does not get message:{}", r_body);
-                    sleep(1000)
+                    sleep(10).await;
                 }
             }
         }
         response_code::PULL_NOT_FOUND => {
             debug!("no message found");
-            sleep(2000)
+            sleep(10).await;
         }
         _ => {
             warn!("not support response code:{}, message:{:?}", cmd.req_code, String::from_utf8(cmd.r_body));
