@@ -16,9 +16,11 @@ use crate::protocols::header::pull_message_request_header::PullMessageRequestHea
 use crate::protocols::header::pull_message_response_header::PullMessageResponseHeader;
 use crate::protocols::header::query_consumer_offset_request_header::QueryConsumerOffsetRequestHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
-use crate::protocols::{PermName, request_code, response_code, SerializeDeserialize};
+use crate::protocols::{get_current_time_millis, PermName, request_code, response_code, SerializeDeserialize};
 use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
+use crate::protocols::body::consumer_running_info::ConsumerRunningInfo;
 use crate::protocols::header::get_consumer_list_by_group_request_header::GetConsumerListByGroupRequestHeader;
+use crate::protocols::header::get_consumer_running_info_requestheader::GetConsumerRunningInfoRequestHeader;
 use crate::protocols::header::notify_consumer_ids_changed_request_header::NotifyConsumerIdsChangedRequestHeader;
 use crate::protocols::header::query_consumer_offset_response_header::QueryConsumerOffsetResponseHeader;
 use crate::protocols::mq_command::MqCommand;
@@ -30,11 +32,6 @@ static mut OPAQUE_TABLE: LazyLock<Arc<RwLock<HashMap<i32, MqCommand>>>> = LazyLo
 );
 
 
-static mut SUBSCRIPTION_DATA: LazyLock<HashMap<String, SubscriptionData>> = LazyLock::new(
-    || {
-        HashMap::new()
-    }
-);
 
 /// key=topic
 static mut CONSUMER_MAP: LazyLock<Arc<RwLock<HashMap<String, MqConsumer>>>> = LazyLock::new(
@@ -72,6 +69,20 @@ async fn get_consumer_list() -> Vec<MqConsumer> {
     }
 }
 
+async fn get_consumer_by_group(consumer_group: &str) -> Option<MqConsumer> {
+    unsafe {
+        let temp = CONSUMER_MAP.clone();
+        let read = temp.read().await;
+        for(_,mq) in read.iter() {
+            if mq.consume_group == consumer_group {
+                return Some(mq.clone());
+            }
+        }
+        None
+    }
+}
+
+
 
 #[derive(Debug, Clone)]
 pub struct MqConsumer {
@@ -82,6 +93,7 @@ pub struct MqConsumer {
     pub broadcast: bool,
     pub client_addr: String,
     pub message_queues: Vec<MessageQueue>,
+    pub start_time: i64,
 }
 
 
@@ -198,6 +210,19 @@ impl MqConsumer {
 
                             response_code::TOPIC_NOT_EXIST => {
                                 warn!("topic not exits:{:?}", String::from_utf8(mq_command.r_body));
+                            }
+
+                            request_code::GET_CONSUMER_RUNNING_INFO => {
+                                let header = GetConsumerRunningInfoRequestHeader::convert_from_command(&mq_command);
+                                let consumer = get_consumer_by_group(header.consumerGroup.as_str()).await;
+                                if consumer.is_none() {
+                                    warn!("consumer group not found:{:?}", header);
+                                    continue;
+                                }
+                                let consumer = consumer.unwrap();
+                                let run_info = ConsumerRunningInfo::build_consumer_running_info(consumer);
+                                let cmd = run_info.to_command();
+                                tx.send(cmd).await.unwrap();
                             }
                             _ => {
                                 info!("not supported request, code:{}, remark:{:?}, extend:{:?}", mq_command.req_code, String::from_utf8(mq_command.r_body), String::from_utf8(mq_command.e_body));
@@ -322,6 +347,7 @@ impl MqConsumer {
             broadcast: false,
             client_addr,
             message_queues: vec![],
+            start_time: get_current_time_millis(),
         }
     }
 
@@ -563,7 +589,7 @@ mod test {
         let lock = Arc::new(RwLock::new(true));
         let run = lock.clone();
         tokio::spawn(async move { consumer.start_consume(handle, run).await; });
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
         let mut run = lock.write().await;
         *run = false;
         tokio::time::sleep(Duration::from_secs(5)).await;

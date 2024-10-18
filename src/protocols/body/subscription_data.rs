@@ -1,7 +1,7 @@
 use serde::Serialize;
 use crate::protocols::get_current_time_millis;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Eq, PartialEq, Hash)]
 #[allow(non_snake_case)]
 pub struct SubscriptionData {
     //   private boolean classFilterMode = false;

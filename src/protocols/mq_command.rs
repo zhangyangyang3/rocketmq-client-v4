@@ -47,7 +47,7 @@ e_body 	int32 	payload of extended fields
 */
 
 const LANGUAGE_FLAG: i8 = 12; // 12 is define as rust
-const VERSION_FLAG: i16 = 63;
+pub const VERSION_FLAG: i16 = 63;
 static OPAQUE: LazyLock<ConsistentCounter> = LazyLock::new(||{
     ConsistentCounter::new(200)
 });

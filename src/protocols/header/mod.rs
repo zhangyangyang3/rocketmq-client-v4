@@ -18,3 +18,5 @@ pub mod get_consumer_status_request_header;
 
 pub mod send_message_request_header;
 pub mod notify_consumer_ids_changed_request_header;
+
+pub mod get_consumer_running_info_requestheader;
