@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ impl GetConsumerListByGroupResponseBody {
             };
         }
 
-        info!("GetConsumerListByGroupResponseBody:{:?}", String::from_utf8(bytes.clone()));
+        debug!("GetConsumerListByGroupResponseBody:{:?}", String::from_utf8(bytes.clone()));
         let body = serde_json::from_slice::<Self>(bytes);
         match body {
             Ok(body) => body,

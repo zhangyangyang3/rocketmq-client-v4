@@ -81,9 +81,12 @@ impl ConsumerRunningInfo {
 
     }
 
-    pub fn to_command(&self) -> MqCommand {
+    pub fn to_command(&self, opaque: i32) -> MqCommand {
         let json = self.to_json();
-        MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], Vec::from(json))
+        let mut cmd = MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], Vec::from(json));
+        cmd.request_flag = 1;
+        cmd.opaque = opaque;
+        cmd
     }
 
     fn to_json(&self) -> String {
@@ -95,7 +98,7 @@ impl ConsumerRunningInfo {
         json.push_str(&prop);
         json.push_str(",");
 
-        json.push_str("\"subscription_set\":");
+        json.push_str("\"subscriptionSet\":");
         let sub = serde_json::to_string(&self.subscription_set).unwrap();
         json.push_str(&sub);
         json.push_str(",");

@@ -191,8 +191,8 @@ impl MqConsumer {
 
                             response_code::SUCCESS => {
                                 info!("get server resp. req cmd:{:?}, opaque:{:?},remark:{:?}, extend:{:?}, body:{:?}"
-                                    , req_cmd.req_code, req_cmd.opaque, String::from_utf8(req_cmd.r_body)
-                                    , String::from_utf8(req_cmd.e_body), String::from_utf8(req_cmd.body));
+                                    , req_cmd.req_code, req_cmd.opaque, String::from_utf8(mq_command.r_body)
+                                    , String::from_utf8(mq_command.e_body), String::from_utf8(mq_command.body));
                             }
 
                             _ => {
@@ -200,7 +200,6 @@ impl MqConsumer {
                             }
                         }
                     } else {
-                        warn!("get server request:{:?},opaque:{}", mq_command.req_code,mq_command.opaque );
                         match mq_command.req_code {
 
                             request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
@@ -226,7 +225,7 @@ impl MqConsumer {
                                 }
                                 let consumer = consumer.unwrap();
                                 let run_info = ConsumerRunningInfo::build_consumer_running_info(consumer);
-                                let cmd = run_info.to_command();
+                                let cmd = run_info.to_command(mq_command.opaque);
                                 tx.send(cmd).await.unwrap();
                             }
                             _ => {
@@ -599,7 +598,7 @@ mod test {
         tokio::time::sleep(Duration::from_secs(60)).await;
         let mut run = lock.write().await;
         *run = false;
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         info!("quit the test")
     }
 
