@@ -34,18 +34,20 @@ pub async fn main() {
     let name_addr = "192.168.3.49:9876".to_string();
     let topic = "pushNoticeMessage_To".to_string();
 
-    let cluster = MqConnection::get_cluster_info(&name_addr).await;
-    let (tcp_stream, id) = MqConnection::get_broker_tcp_stream(&cluster).await;
+    let consumer = MqConsumer::new_consumer(name_addr, "Oss_PushNoticeMessage_group".to_string(), topic);
 
-    info!("tcp stream:{:?}, id:{}", tcp_stream, id);
-    let mut consumer = MqConsumer::new_consumer(name_addr, "test1_group".to_string(), topic, tcp_stream, id);
-    let lock = Arc::new(RwLock::new(true));
-    let lock1 = lock.clone();
     let handle = Arc::new(Handler {});
-    tokio::spawn(async move {consumer.pull_message(handle, lock).await;});
-    tokio::time::sleep(Duration::from_secs(60)).await;
-    *lock1.write().await = false;
 
+    let lock = Arc::new(RwLock::new(true));
+    let run = lock.clone();
+
+    tokio::spawn(async move { consumer.start_consume(handle, run).await; });
+
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let mut run = lock.write().await;
+    *run = false;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    info!("quit the test")
 }
 
 ```
