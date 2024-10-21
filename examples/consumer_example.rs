@@ -23,7 +23,7 @@ pub async fn main() {
     let name_addr = "192.168.3.49:9876".to_string();
     let topic = "pushNoticeMessage_To".to_string();
 
-    let consumer = MqConsumer::new_consumer(name_addr, "consume_pushNoticeMessage_test_2".to_string(), topic);
+    let consumer = MqConsumer::new_consumer(name_addr, "Oss_PushNoticeMessage_group".to_string(), topic);
 
     let handle = Arc::new(Handler {});
 
@@ -32,7 +32,7 @@ pub async fn main() {
 
     tokio::spawn(async move { consumer.start_consume(handle, run).await; });
 
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
     let mut run = lock.write().await;
     *run = false;
     tokio::time::sleep(Duration::from_secs(5)).await;
