@@ -333,7 +333,7 @@ impl MqConsumer {
                         tx.send(cmd).await.unwrap();
                     }
                 }
-                Self::sleep(10000).await;
+                Self::sleep(10).await;
             }
         });
     }
