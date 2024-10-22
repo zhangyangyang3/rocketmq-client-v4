@@ -98,7 +98,7 @@ async fn set_pull_consumer_offset(topic: &str, queue_id: i32, offset: i64) {
             let key = format!("{}_{}", topic, queue_id);
             write.insert(key, old);
     }
-
+    debug!("set_pull_consumer_offset, old:{}, new value:{}", old, offset);
 }
 
 
@@ -220,6 +220,7 @@ impl MqConsumer {
                     debug!("receive non");
                 }
                 Some(msg_body) => {
+                    debug!("do consume msg:{},{},{}", msg_body.topic.as_str(), msg_body.queue_id, msg_body.msg_id);
                     do_consume.handle(&msg_body).await;
                 }
             }
@@ -625,7 +626,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                             debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
                             continue;
                         }
-
+                        debug!("send msg to consume:{},{},{}", m.topic.as_str(), m.queue_id, m.msg_id.as_str());
                         let send = msg_sender.send(m.clone()).await;
                         if send.is_err() {
                             warn!("consume message failed:{:?}", send.err());
