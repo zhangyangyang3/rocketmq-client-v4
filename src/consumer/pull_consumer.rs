@@ -534,7 +534,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                             let map = map.read().await;
                             map.get(&key).unwrap_or(&-1).clone()
                         };
-                        if offset >= m.queue_offset {
+                        if offset > m.queue_offset {
                             debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
                             continue;
                         }

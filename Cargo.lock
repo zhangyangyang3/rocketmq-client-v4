@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-client-v4"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "atomic-counter",
  "bytes",
