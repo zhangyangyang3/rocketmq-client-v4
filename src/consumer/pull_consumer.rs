@@ -41,11 +41,101 @@ static mut CONSUMER_MAP: LazyLock<Arc<RwLock<HashMap<String, MqConsumer>>>> = La
 );
 
 /// key = topic + _ + queue_id , value=offset
-static mut MESSAGE_QUEUE_MAP: LazyLock<Arc<RwLock<HashMap<String, i64>>>> = LazyLock::new(
+static mut BEFORE_PULL_MESSAGE_QUEUE_MAP: LazyLock<Arc<RwLock<HashMap<String, i64>>>> = LazyLock::new(
     || {
         Arc::new(RwLock::new(HashMap::new()))
     }
 );
+
+
+/// key = topic + _ + queue_id , value=offset
+static mut AFTER_PULL_MESSAGE_QUEUE_MAP: LazyLock<Arc<RwLock<HashMap<String, i64>>>> = LazyLock::new(
+    || {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+);
+
+
+
+async fn get_before_pull_consumer_offset(topic: &str, queue_id: i32) -> i64 {
+    unsafe {
+        let temp = BEFORE_PULL_MESSAGE_QUEUE_MAP.clone();
+        let read = temp.read().await;
+        let t = read.get(&format!("{}_{}", topic, queue_id));
+        if t.is_none() {
+            return -1;
+        }
+        let t = t.unwrap();
+        return *t;
+    }
+}
+
+async fn get_after_pull_consumer_offset(topic: &str, queue_id: i32) -> i64 {
+    unsafe {
+        let temp = AFTER_PULL_MESSAGE_QUEUE_MAP.clone();
+        let read = temp.read().await;
+        let t = read.get(&format!("{}_{}", topic, queue_id));
+        if t.is_none() {
+            return -1;
+        }
+        let t = t.unwrap();
+        return *t;
+    }
+}
+
+async fn set_pull_consumer_offset(topic: &str, queue_id: i32, offset: i64) {
+    let old = get_before_pull_consumer_offset(topic, queue_id).await;
+    unsafe {
+        let temp = BEFORE_PULL_MESSAGE_QUEUE_MAP.clone();
+        let mut write = temp.write().await;
+        let key = format!("{}_{}", topic, queue_id);
+        write.insert(key, offset);
+    }
+
+    unsafe {
+            let temp = AFTER_PULL_MESSAGE_QUEUE_MAP.clone();
+            let mut write = temp.write().await;
+            let key = format!("{}_{}", topic, queue_id);
+            write.insert(key, old);
+    }
+
+}
+
+
+
+/// key = topic + _ + queue_id , value=offset
+static mut LOCAL_MESSAGE_QUEUE_MAP: LazyLock<Arc<RwLock<HashMap<String, i64>>>> = LazyLock::new(
+    || {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+);
+
+
+async fn get_local_consumer_offset(topic: &str, queue_id: i32) -> i64 {
+    unsafe {
+        let temp = LOCAL_MESSAGE_QUEUE_MAP.clone();
+        let read = temp.read().await;
+        let t = read.get(&format!("{}_{}", topic, queue_id));
+        if t.is_none() {
+            return -1;
+        }
+        let t = t.unwrap();
+        return *t;
+    }
+}
+
+async fn set_local_consumer_offset(topic: &str, queue_id: i32, offset: i64){
+    unsafe {
+        let temp = LOCAL_MESSAGE_QUEUE_MAP.clone();
+        let mut write = temp.write().await;
+        let key = format!("{}_{}", topic, queue_id);
+        write.insert(key, offset);
+    }
+}
+
+
+
+
 
 async fn get_consumer_by_topic(topic: &str) -> Option<MqConsumer> {
     unsafe {
@@ -166,12 +256,8 @@ impl MqConsumer {
                                     Some(o) => { o.offset }
                                 };
                                 if offset >= 0 {
-                                    let key = format!("{}_{}", req.topic, req.queueId);
-                                    {
-                                        let queue = MESSAGE_QUEUE_MAP.clone();
-                                        let mut queue = queue.write().await;
-                                        (*queue).insert(key, offset);
-                                    }
+                                    set_pull_consumer_offset(req.topic.as_str(), req.queueId, offset).await;
+                                    set_local_consumer_offset(req.topic.as_str(), req.queueId, offset).await;
                                 }
                             }
 
@@ -182,11 +268,7 @@ impl MqConsumer {
                             request_code::UPDATE_CONSUMER_OFFSET => {
                                 // update offset
                                 let header = UpdateConsumerOffsetRequestHeader::convert_from_command(&req_cmd);
-                                let key = format!("{}_{}", header.topic, header.queueId);
-                                let queue = MESSAGE_QUEUE_MAP.clone();
-                                let mut queue = queue.write().await;
-                                queue.insert(key, header.commitOffset);
-
+                                set_local_consumer_offset(header.topic.as_str(), header.queueId, header.commitOffset)
                             }
 
                             response_code::SUCCESS => {
@@ -311,12 +393,8 @@ impl MqConsumer {
                     }
 
                     for queue in consumer.message_queues.iter() {
-                        let offset = unsafe {
-                            let key = format!("{}_{}", queue.topic.as_str(), queue.queueId);
-                            let map = MESSAGE_QUEUE_MAP.clone();
-                            let map = map.read().await;
-                            map.get(&key).unwrap_or(&-1).clone()
-                        };
+                        let offset = get_before_pull_consumer_offset(queue.topic.as_str(), queue.queueId).await;
+
                         // info!("queue:{:?}, offset:{:?}", queue, offset);
                         if offset < 0 {
                             info!("fetch queue offset. queue:{:?}", queue);
@@ -327,6 +405,12 @@ impl MqConsumer {
                             Self::sleep(10).await;
                             continue;
                         }
+                        let old_offset = get_after_pull_consumer_offset(queue.topic.as_str(), queue.queueId).await;
+                        if old_offset >= offset {
+                            debug!("topic:{}, queue:{}, already pulled. offset:{}", queue.topic.as_str(), queue.queueId, offset);
+                            continue;
+                        }
+
                         // pull message
                         let cmd = PullMessageRequestHeader::new(consumer.consume_group.clone(),
                                                                 consumer.topic.clone(), queue.queueId, offset, 0).to_command();
@@ -525,16 +609,19 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
             match r_body.as_str() {
                 "FOUND" => {
                     let bodies = MessageBody::decode_from_bytes(cmd.body);
+
                     debug!("message count:{}", bodies.len());
                     let temp = bodies.get(0).unwrap();
+                    let pulled_offset = get_before_pull_consumer_offset(temp.topic.as_str(), temp.queue_id).await;
+                    if pulled_offset >= offset {
+                        debug!("topic:{}, queue:{}, offset:{} already pulled.", temp.topic.as_str(), temp.queue_id, offset);
+                        return;
+                    } else {
+                        set_pull_consumer_offset(temp.topic.as_str(), temp.queue_id, offset).await;
+                    }
                     for m in &bodies {
-                        let offset = unsafe {
-                            let key = format!("{}_{}", m.topic.as_str(), m.queue_id);
-                            let map = MESSAGE_QUEUE_MAP.clone();
-                            let map = map.read().await;
-                            map.get(&key).unwrap_or(&-1).clone()
-                        };
-                        if offset > m.queue_offset {
+                        let local_offset = get_local_consumer_offset(m.topic.as_str(), m.queue_id).await;
+                        if local_offset >= m.queue_offset {
                             debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
                             continue;
                         }
