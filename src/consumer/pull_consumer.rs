@@ -258,7 +258,7 @@ impl MqConsumer {
                                 };
                                 if offset >= 0 {
                                     set_pull_consumer_offset(req.topic.as_str(), req.queueId, offset).await;
-                                    set_local_consumer_offset(req.topic.as_str(), req.queueId, offset).await;
+                                    // set_local_consumer_offset(req.topic.as_str(), req.queueId, offset).await;
                                 }
                             }
 
@@ -641,7 +641,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                         }
                         Some(consumer) => {
                             let update_offset = UpdateConsumerOffsetRequestHeader::
-                            new(consumer.consume_group, consumer.topic, temp.queue_id, offset).command();
+                            new(consumer.consume_group, consumer.topic, temp.queue_id, offset - 1).command();
                             cmd_sender.send(update_offset).await.unwrap();
                         }
                     }
@@ -674,7 +674,7 @@ mod test {
 
     pub fn init_logger() {
         let offset = UtcOffset::from_hms(8, 0, 0).unwrap();
-        simple_logger::SimpleLogger::new().with_utc_offset(offset).with_level(LevelFilter::Info).env().init().unwrap();
+        simple_logger::SimpleLogger::new().with_utc_offset(offset).with_level(LevelFilter::Debug).env().init().unwrap();
     }
 
 

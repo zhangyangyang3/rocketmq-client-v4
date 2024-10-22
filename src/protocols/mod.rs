@@ -206,7 +206,7 @@ mod test {
             src.push(data[i]);
         }
         let dest = fixed_un_standard_json(&src);
-        let val : Value = serde_json::from_slice(&dest).unwrap();
+        let _val : Value = serde_json::from_slice(&dest).unwrap();
         println!("dest data:{}", String::from_utf8(dest).unwrap());
     }
 
@@ -219,7 +219,7 @@ mod test {
             src.push(data[i]);
         }
         let dest = fixed_un_standard_json(&src);
-        let val : Value = serde_json::from_slice(&dest).unwrap();
+        let _val : Value = serde_json::from_slice(&dest).unwrap();
         println!("dest data:{}", String::from_utf8(dest).unwrap());
     }
 }
