@@ -1,10 +1,8 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use log::{info, LevelFilter};
 use time::UtcOffset;
 use tokio::sync::RwLock;
-use rocketmq_client_v4::connection::MqConnection;
 use rocketmq_client_v4::consumer::message_handler::MessageHandler;
 use rocketmq_client_v4::consumer::pull_consumer::MqConsumer;
 use rocketmq_client_v4::protocols::body::message_body::MessageBody;
