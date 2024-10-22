@@ -528,6 +528,17 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                     debug!("message count:{}", bodies.len());
                     let temp = bodies.get(0).unwrap();
                     for m in &bodies {
+                        let offset = unsafe {
+                            let key = format!("{}_{}", m.topic.as_str(), m.queue_id);
+                            let map = MESSAGE_QUEUE_MAP.clone();
+                            let map = map.read().await;
+                            map.get(&key).unwrap_or(&-1).clone()
+                        };
+                        if offset >= m.queue_offset {
+                            debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
+                            continue;
+                        }
+
                         let send = msg_sender.send(m.clone()).await;
                         if send.is_err() {
                             warn!("consume message failed:{:?}", send.err());
