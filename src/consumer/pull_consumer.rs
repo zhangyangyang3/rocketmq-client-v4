@@ -617,10 +617,9 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                     if pulled_offset >= offset {
                         debug!("topic:{}, queue:{}, offset:{} already pulled.", temp.topic.as_str(), temp.queue_id, offset);
                         return;
-                    } else {
-                        set_pull_consumer_offset(temp.topic.as_str(), temp.queue_id, offset).await;
                     }
                     for m in &bodies {
+                        debug!("pull message:{},{},{},{}", m.topic.as_str(), m.queue_id, m.queue_offset, m.msg_id);
                         let local_offset = get_local_consumer_offset(m.topic.as_str(), m.queue_id).await;
                         if local_offset >= m.queue_offset {
                             debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
@@ -633,6 +632,9 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                             // todo should re consume
                         }
                     }
+
+                    set_pull_consumer_offset(temp.topic.as_str(), temp.queue_id, offset).await;
+
                     match get_consumer_by_topic(temp.topic.as_str()).await {
                         None => {
                             warn!("topic:{}, no consumer.", temp.topic.as_str());
