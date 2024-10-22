@@ -84,6 +84,10 @@ pub fn fixed_un_standard_json(src: &Vec<u8>) -> Vec<u8> {
 
     let colon = ":".as_bytes()[0];
 
+    let zero = "0".as_bytes()[0];
+    let nine = "9".as_bytes()[0];
+
+
     let bsol = 92u8; // \
 
     let mut dest: Vec<u8> = vec![];
@@ -97,7 +101,7 @@ pub fn fixed_un_standard_json(src: &Vec<u8>) -> Vec<u8> {
         // start { ,
 
         if quot_count % 2 == 0 && (src[i] == lcub || src[i] == comma) {
-            if src[i + 1] != quot && src[i + 1] != rcub {
+            if src[i + 1] != quot && src[i + 1] != rcub && (src[i+1] >= zero && src[i+1] <= nine) {
                 dest.push(src[i]);
                 dest.push(quot);
                 continue;
@@ -190,6 +194,7 @@ pub async fn sleep(millis: u64) {
 
 #[cfg(test)]
 mod test {
+    use serde_json::Value;
     use crate::protocols::fixed_un_standard_json;
 
     #[test]
@@ -201,6 +206,20 @@ mod test {
             src.push(data[i]);
         }
         let dest = fixed_un_standard_json(&src);
-        println!("dest data:{:?}", String::from_utf8(dest).unwrap());
+        let val : Value = serde_json::from_slice(&dest).unwrap();
+        println!("dest data:{}", String::from_utf8(dest).unwrap());
+    }
+
+    #[test]
+    fn calc_ascii_1() {
+        let data = r#"{"brokerDatas":[{"brokerAddrs":{0:"172.31.21.98:10911",1:"172.31.25.213:20911"},"brokerName":"broker-b","cluster":"DefaultCluster"},{"brokerAddrs":{0:"172.31.30.236:10911",1:"172.31.21.98:20911"},"brokerName":"broker-c","cluster":"DefaultCluster"},{"brokerAddrs":{0:"172.31.25.213:10911",1:"172.31.30.236:20911"},"brokerName":"broker-a","cluster":"DefaultCluster"}],"filterServerTable":{},"queueDatas":[{"brokerName":"broker-b","perm":6,"readQueueNums":16,"topicSysFlag":0,"writeQueueNums":16},{"brokerName":"broker-c","perm":6,"readQueueNums":16,"topicSysFlag":0,"writeQueueNums":16},{"brokerName":"broker-a","perm":6,"readQueueNums":16,"topicSysFlag":0,"writeQueueNums":16}]}"#;
+        let data = data.as_bytes();
+        let mut src = vec![];
+        for i in 0..data.len() {
+            src.push(data[i]);
+        }
+        let dest = fixed_un_standard_json(&src);
+        let val : Value = serde_json::from_slice(&dest).unwrap();
+        println!("dest data:{}", String::from_utf8(dest).unwrap());
     }
 }
