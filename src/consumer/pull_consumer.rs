@@ -268,7 +268,7 @@ impl MqConsumer {
                             request_code::UPDATE_CONSUMER_OFFSET => {
                                 // update offset
                                 let header = UpdateConsumerOffsetRequestHeader::convert_from_command(&req_cmd);
-                                set_local_consumer_offset(header.topic.as_str(), header.queueId, header.commitOffset)
+                                set_local_consumer_offset(header.topic.as_str(), header.queueId, header.commitOffset).await;
                             }
 
                             response_code::SUCCESS => {
