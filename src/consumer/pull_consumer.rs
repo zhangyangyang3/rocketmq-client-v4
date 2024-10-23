@@ -621,7 +621,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                     for m in &bodies {
                         debug!("pull message:{},{},{},{}", m.topic.as_str(), m.queue_id, m.queue_offset, m.msg_id);
                         let local_offset = get_local_consumer_offset(m.topic.as_str(), m.queue_id).await;
-                        if local_offset >= m.queue_offset {
+                        if local_offset > m.queue_offset {
                             debug!("topic:{}, queue:{}, offset:{} already consumed, current offset:{}", m.topic.as_str(), m.queue_id, m.queue_offset, offset);
                             continue;
                         }
@@ -641,7 +641,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
                         }
                         Some(consumer) => {
                             let update_offset = UpdateConsumerOffsetRequestHeader::
-                            new(consumer.consume_group, consumer.topic, temp.queue_id, offset - 1).command();
+                            new(consumer.consume_group, consumer.topic, temp.queue_id, offset).command();
                             cmd_sender.send(update_offset).await.unwrap();
                         }
                     }
