@@ -24,7 +24,7 @@ impl PullMessageResponseHeader {
         }
     }
     pub fn bytes_to_header(serialize_method: u8, bytes: Vec<u8>)-> Option<Box<Self>>  {
-        debug!("PullMessageResponseHeader, method:{}, data:{:?}",serialize_method, String::from_utf8(bytes.clone()));
+        // debug!("PullMessageResponseHeader, method:{}, data:{:?}",serialize_method, String::from_utf8(bytes.clone()));
         if serialize_method == HEADER_SERIALIZE_METHOD_JSON {
             Self::bates_json_to_header(bytes)
         } else {

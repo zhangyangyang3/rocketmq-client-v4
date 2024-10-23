@@ -653,7 +653,7 @@ async fn do_consume_message(cmd: MqCommand, msg_sender: Sender<MessageBody>, cmd
             }
         }
         response_code::PULL_NOT_FOUND => {
-            debug!("no message found");
+            // debug!("no message found");
             sleep(10).await;
         }
         _ => {
