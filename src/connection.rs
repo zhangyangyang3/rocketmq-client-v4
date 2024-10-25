@@ -1,13 +1,12 @@
-use local_ip_address::local_ip;
-use log::{debug, info};
-use tokio::net::TcpStream;
 use crate::protocols::body::cluster_info::ClusterInfo;
 use crate::protocols::body::topic_route_data::TopicRouteData;
 use crate::protocols::get_current_time_millis;
 use crate::protocols::header::get_route_info_request_header::GetRouteInfoRequestHeader;
+use local_ip_address::local_ip;
+use log::{debug, info};
+use tokio::net::TcpStream;
 
 pub fn get_client_ip() -> String {
-
     let my_local_ip = local_ip();
 
     if let Ok(my_local_ip) = my_local_ip {
@@ -26,24 +25,24 @@ impl MqConnection {
         info!("connecting to rocketmq server:{}", address);
         let name_server_socket = TcpStream::connect(address).await;
         if name_server_socket.is_err() {
-            panic!("connection to mq failed {:?}", name_server_socket);
+            panic!(
+                "connection to mq failed, name_server_addr:{}, {:?}",
+                address, name_server_socket
+            );
         }
         let mut name_server_stream = name_server_socket.unwrap();
         ClusterInfo::get_cluster_info(&mut name_server_stream).await
     }
 
-    pub async fn get_broker_tcp_stream(cluster_info: &ClusterInfo) ->(TcpStream, i64) {
+    pub async fn get_broker_tcp_stream(cluster_info: &ClusterInfo) -> (TcpStream, i64) {
         let mut broker_list = vec![];
-        for (_,v) in &cluster_info.brokerAddrTable {
+        for (_, v) in &cluster_info.brokerAddrTable {
             broker_list.push(v);
         }
 
-
-
-
         let idx = get_current_time_millis() as usize % broker_list.len();
         let broker = broker_list[idx];
-        for ( id,addr) in &broker.brokerAddrs {
+        for (id, addr) in &broker.brokerAddrs {
             info!("try to connect to {}", addr);
             let tcp_stream = TcpStream::connect(addr).await;
             if tcp_stream.is_ok() {
@@ -56,8 +55,8 @@ impl MqConnection {
     pub async fn get_all_master_broker_stream(cluster_info: &ClusterInfo) -> Vec<TcpStream> {
         let mut broker_list = vec![];
 
-        for (_,v) in &cluster_info.brokerAddrTable {
-            for ( id,addr) in &v.brokerAddrs {
+        for (_, v) in &cluster_info.brokerAddrTable {
+            for (id, addr) in &v.brokerAddrs {
                 if id != "0" {
                     continue;
                 }
@@ -87,14 +86,12 @@ impl MqConnection {
         let req_data = GetRouteInfoRequestHeader::get_route_info_request(topic);
         req_data.get_topic_route_data(&mut name_server_stream).await
     }
-
 }
-
 
 #[cfg(test)]
 mod test {
-    use log::{info};
     use crate::connection::{get_client_ip, MqConnection};
+    use log::info;
 
     #[test]
     fn client_ip_test() {
@@ -102,8 +99,7 @@ mod test {
         println!("ip:{}", ip);
     }
 
-    fn init_logger() {
-    }
+    fn init_logger() {}
 
     #[tokio::test]
     async fn connection_test() {

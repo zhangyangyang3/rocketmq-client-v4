@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::io::{Cursor, Read};
 use bytes::{Buf, Bytes};
 use log::warn;
+use std::collections::HashMap;
+use std::io::{Cursor, Read};
 use zip::ZipArchive;
 
 #[derive(Debug, Clone)]
@@ -34,11 +34,10 @@ pub struct MessageBody {
     pub commit_log_offset: i64,
     pub body_crc: i32,
     pub reconsume_times: i32,
-    pub prepared_transaction_offset: i64
+    pub prepared_transaction_offset: i64,
 }
 
 impl MessageBody {
-
     // see java  org.apache.rocketmq.common.message; MessageDecoder decode method
     pub fn decode_from_bytes(bytes: Vec<u8>) -> Vec<Self> {
         let mut bytes = Bytes::from(bytes);
@@ -51,7 +50,6 @@ impl MessageBody {
             let _magic_code = bytes.get_i32();
             //
 
-
             // 3 BODY CRC
             let body_crc = bytes.get_i32();
 
@@ -63,7 +61,6 @@ impl MessageBody {
 
             // 6 QUEUE OFFSET
             let queue_offset = bytes.get_i64();
-
 
             //  7 PHYSICAL OFFSET commit log offset
             let physic_offset = bytes.get_i64();
@@ -145,24 +142,23 @@ impl MessageBody {
                 prepared_transaction_offset,
             };
             ret.push(msg);
-
         }
         ret
     }
 }
 
 fn create_msg_id(host: &Vec<u8>, port: i32, offset: i64) -> String {
-    let mut dest: [u8; 16] = [0;16];
+    let mut dest: [u8; 16] = [0; 16];
     dest[0] = host[0];
     dest[1] = host[1];
     dest[2] = host[2];
     dest[3] = host[3];
-    let port:[u8;4] = port.to_be_bytes();
+    let port: [u8; 4] = port.to_be_bytes();
     dest[4] = port[0];
     dest[5] = port[1];
     dest[6] = port[2];
     dest[7] = port[3];
-    let offset:[u8;8] = offset.to_be_bytes();
+    let offset: [u8; 8] = offset.to_be_bytes();
     dest[8] = offset[0];
     dest[9] = offset[1];
     dest[10] = offset[2];
@@ -200,7 +196,6 @@ fn unzip_body(body: Vec<u8>) -> Vec<u8> {
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("unzip failed");
     buffer
-
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use bytes::{BufMut, BytesMut};
-use uuid::Uuid;
 use crate::protocols::header::send_message_request_header::SendMessageRequestHeader;
+use bytes::{BufMut, BytesMut};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug)]
 #[allow(non_snake_case)]
@@ -20,7 +20,7 @@ impl MqMessage {
             flag: 0,
             properties: HashMap::new(),
             body,
-            transactionId: Uuid::new_v4().to_string()
+            transactionId: Uuid::new_v4().to_string(),
         }
     }
 
@@ -40,7 +40,7 @@ impl MqMessage {
         let body_len = self.body.len();
         let header_str = SendMessageRequestHeader::convert_map_to_string(&self.properties);
         let header_len = header_str.len();
-        let len = 4 + 4 + 4 + 4 + 4 + body_len + 2 + header_len ;
+        let len = 4 + 4 + 4 + 4 + 4 + body_len + 2 + header_len;
         let mut bytes = BytesMut::with_capacity(len);
         // 1 TOTALSIZE
         bytes.put_i32(len as i32);

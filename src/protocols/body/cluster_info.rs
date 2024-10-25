@@ -1,13 +1,12 @@
-use std::collections::{HashMap, HashSet};
-use log::{debug, info};
-use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 use crate::protocols::body::broker_data::BrokerData;
 use crate::protocols::mq_command::MqCommand;
 use crate::protocols::request_code::GET_BROKER_CLUSTER_INFO;
 use crate::protocols::{fixed_un_standard_json, response_code};
-
+use log::{debug, info};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -18,7 +17,6 @@ pub struct ClusterInfo {
 
 impl ClusterInfo {
     pub async fn get_cluster_info(name_server: &mut TcpStream) -> ClusterInfo {
-
         let broker_conf = MqCommand::new_with_body(GET_BROKER_CLUSTER_INFO, vec![], vec![], vec![]);
         let opa = broker_conf.opaque;
         let broker_conf = broker_conf.to_bytes();
@@ -45,7 +43,6 @@ impl ClusterInfo {
             _ => {
                 panic!("get route info failed:{:?}", cmd);
             }
-        }
-
+        };
     }
 }

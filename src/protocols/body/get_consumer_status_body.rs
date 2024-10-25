@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use crate::protocols::body::message_queue::MessageQueue;
+use crate::protocols::mq_command::{MqCommand, HEADER_SERIALIZE_METHOD_JSON};
+use crate::protocols::response_code;
 use log::debug;
+use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
-use crate::protocols::body::message_queue::MessageQueue;
-use crate::protocols::mq_command::{HEADER_SERIALIZE_METHOD_JSON, MqCommand};
-use crate::protocols::response_code;
 
 #[derive(Debug)]
 pub struct GetConsumerStatusBody {
@@ -12,7 +12,6 @@ pub struct GetConsumerStatusBody {
 }
 
 impl GetConsumerStatusBody {
-
     pub fn new_from_queues(mq_list: &Vec<MessageQueue>) -> Self {
         let mut table = HashMap::new();
         for mq in mq_list {
@@ -24,7 +23,7 @@ impl GetConsumerStatusBody {
     }
     pub fn new(message_queue_table: HashMap<MessageQueue, i32>) -> Self {
         GetConsumerStatusBody {
-            message_queue_table
+            message_queue_table,
         }
     }
 
@@ -33,7 +32,7 @@ impl GetConsumerStatusBody {
         let mut body = String::new();
         body.push_str("{");
         body.push_str("\"messageQueueTable\":{");
-        for (k,v) in &self.message_queue_table {
+        for (k, v) in &self.message_queue_table {
             let json = serde_json::to_string(k).unwrap();
             body.push_str(&json);
             body.push_str(":");
@@ -50,7 +49,6 @@ impl GetConsumerStatusBody {
     }
 
     pub async fn send_request(self, broker_stream: &mut TcpStream, opaque: i32) {
-
         let body = self.to_json();
         debug!("response server GetConsumerStatusBody:{:?}", body);
         let bytes = Vec::from(body);
@@ -66,13 +64,11 @@ impl GetConsumerStatusBody {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
     use crate::protocols::body::get_consumer_status_body::GetConsumerStatusBody;
     use crate::protocols::body::message_queue::MessageQueue;
+    use std::collections::HashMap;
     #[test]
     fn test_map_to_json() {
         let queue1 = MessageQueue::new("test_topic".to_string(), "test_broker".to_string(), 0);

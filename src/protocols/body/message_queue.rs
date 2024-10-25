@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct MessageQueue {
     pub topic: String,
     pub brokerName: String,
-    pub queueId: i32
+    pub queueId: i32,
 }
 
 impl MessageQueue {
@@ -13,7 +13,7 @@ impl MessageQueue {
         Self {
             topic,
             brokerName: broker_name,
-            queueId: queue_id
+            queueId: queue_id,
         }
     }
 
@@ -21,8 +21,7 @@ impl MessageQueue {
         Self {
             topic: ref_mq.topic.clone(),
             brokerName: ref_mq.brokerName.clone(),
-            queueId: ref_mq.queueId
+            queueId: ref_mq.queueId,
         }
     }
-
 }

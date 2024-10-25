@@ -1,12 +1,12 @@
-use std::collections::{HashMap, HashSet};
-use serde::Serialize;
 use crate::consumer::pull_consumer::MqConsumer;
-use crate::protocols::mq_command::MqCommand;
-use crate::protocols::{mq_command, response_code};
+use crate::consumer::pull_consumer_v2::PullConsumer;
 use crate::protocols::body::consumer_data;
 use crate::protocols::body::message_queue::MessageQueue;
 use crate::protocols::body::subscription_data::SubscriptionData;
-
+use crate::protocols::mq_command::MqCommand;
+use crate::protocols::{mq_command, response_code};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
@@ -57,16 +57,64 @@ pub struct ConsumerRunningInfo {
 }
 
 impl ConsumerRunningInfo {
+    pub fn build_pull_consumer_running_info(
+        consumer: &PullConsumer,
+        message_queues: &Vec<MessageQueue>,
+    ) -> Self {
+        let sub = SubscriptionData::simple_new(consumer.topic.clone());
+        let mut set = HashSet::new();
+        set.insert(sub);
+        let mut properties = HashMap::new();
+        properties.insert(
+            "PROP_CONSUMER_START_TIMESTAMP".to_string(),
+            consumer.start_time.to_string(),
+        );
+        properties.insert(
+            "PROP_NAMESERVER_ADDR".to_string(),
+            consumer.name_server_addr.clone(),
+        );
+        properties.insert(
+            "PROP_CLIENT_VERSION".to_string(),
+            mq_command::VERSION_FLAG.to_string(),
+        );
+        properties.insert(
+            "PROP_CONSUME_TYPE".to_string(),
+            consumer_data::CONSUME_TYPE_PUSH.to_string(),
+        );
+        properties.insert("PROP_THREADPOOL_CORE_SIZE".to_string(), "1".to_string());
+        let mut mq_table = HashMap::new();
+        for x in message_queues {
+            mq_table.insert(x.clone(), ProcessQueueInfo::new());
+        }
+        ConsumerRunningInfo {
+            properties,
+            subscription_set: set,
+            jstack: "".to_string(),
+            mq_table,
+        }
+    }
 
     pub fn build_consumer_running_info(consumer: MqConsumer) -> Self {
         let sub = SubscriptionData::simple_new(consumer.topic.clone());
         let mut set = HashSet::new();
         set.insert(sub);
         let mut properties = HashMap::new();
-        properties.insert("PROP_CONSUMER_START_TIMESTAMP".to_string(), consumer.start_time.to_string());
-        properties.insert("PROP_NAMESERVER_ADDR".to_string(), consumer.name_server_addr.clone());
-        properties.insert("PROP_CLIENT_VERSION".to_string(), mq_command::VERSION_FLAG.to_string());
-        properties.insert("PROP_CONSUME_TYPE".to_string(), consumer_data::CONSUME_TYPE_PUSH.to_string());
+        properties.insert(
+            "PROP_CONSUMER_START_TIMESTAMP".to_string(),
+            consumer.start_time.to_string(),
+        );
+        properties.insert(
+            "PROP_NAMESERVER_ADDR".to_string(),
+            consumer.name_server_addr.clone(),
+        );
+        properties.insert(
+            "PROP_CLIENT_VERSION".to_string(),
+            mq_command::VERSION_FLAG.to_string(),
+        );
+        properties.insert(
+            "PROP_CONSUME_TYPE".to_string(),
+            consumer_data::CONSUME_TYPE_PUSH.to_string(),
+        );
         properties.insert("PROP_THREADPOOL_CORE_SIZE".to_string(), "1".to_string());
         let mut mq_table = HashMap::new();
         for x in &consumer.message_queues {
@@ -78,12 +126,12 @@ impl ConsumerRunningInfo {
             jstack: "".to_string(),
             mq_table,
         }
-
     }
 
     pub fn to_command(&self, opaque: i32) -> MqCommand {
         let json = self.to_json();
-        let mut cmd = MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], Vec::from(json));
+        let mut cmd =
+            MqCommand::new_with_body(response_code::SUCCESS, vec![], vec![], Vec::from(json));
         cmd.request_flag = 1;
         cmd.opaque = opaque;
         cmd
@@ -107,7 +155,7 @@ impl ConsumerRunningInfo {
 
         // mq_table
         json.push_str("\"mqTable\":{");
-        for (k,v) in &self.mq_table {
+        for (k, v) in &self.mq_table {
             let k_json = serde_json::to_string(k).unwrap();
             let v_json = serde_json::to_string(v).unwrap();
             json.push_str(&k_json);
@@ -116,7 +164,7 @@ impl ConsumerRunningInfo {
             json.push_str(",");
         }
         if json.ends_with(",") {
-            json.remove(json.len()-1);
+            json.remove(json.len() - 1);
         }
         // end mq_table
         json.push_str("}");
@@ -137,7 +185,11 @@ mod test {
     fn json_test() {
         let topic = "test_topic";
         let broker_name = "broker_name";
-        let mut consumer = MqConsumer::new_consumer("127.0.0.1:9876".to_string(), "test_group".to_string(), topic.to_string());
+        let mut consumer = MqConsumer::new_consumer(
+            "127.0.0.1:9876".to_string(),
+            "test_group".to_string(),
+            topic.to_string(),
+        );
         let mq1 = MessageQueue::new(topic.to_string(), broker_name.to_string(), 1);
         let mq2 = MessageQueue::new(topic.to_string(), broker_name.to_string(), 2);
         consumer.message_queues.push(mq1);

@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use serde::{Serialize};
+use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub mod body;
 pub mod header;
@@ -12,7 +12,7 @@ pub mod response_code;
 pub mod mq_command;
 
 pub trait SerializeDeserialize {
-    fn  to_bytes_1(&self) -> Vec<u8>
+    fn to_bytes_1(&self) -> Vec<u8>
     where
         Self: Serialize,
     {
@@ -22,7 +22,6 @@ pub trait SerializeDeserialize {
                 let mut buf = BytesMut::with_capacity(128);
                 // debug!("header map:{:?}", &map);
                 for (k, v) in map {
-
                     let v = if v.is_string() {
                         v.as_str().unwrap().to_string()
                     } else if v.is_number() {
@@ -34,7 +33,7 @@ pub trait SerializeDeserialize {
                         }
                     } else if v.is_null() {
                         continue;
-                    }else {
+                    } else {
                         panic!("not support type: key:{}, v:{}", k, v);
                     };
                     buf.put_i16(k.len() as i16);
@@ -50,12 +49,11 @@ pub trait SerializeDeserialize {
         }
     }
 
-
     fn bytes_1_to_header(_bytes: Vec<u8>) -> Option<Box<Self>> {
         None
     }
 
-    fn bytes_1_to_map(bytes: Vec<u8>) -> HashMap<String,String> {
+    fn bytes_1_to_map(bytes: Vec<u8>) -> HashMap<String, String> {
         let mut bytes = Bytes::from(bytes);
         let mut value = HashMap::new();
         while bytes.remaining() > 0 {
@@ -64,12 +62,18 @@ pub trait SerializeDeserialize {
 
             let v1_len = bytes.get_i32();
             let v1 = bytes.copy_to_bytes(v1_len as usize).to_vec();
-            value.insert(String::from_utf8(key1.to_vec()).unwrap(), String::from_utf8(v1.to_vec()).unwrap());
+            value.insert(
+                String::from_utf8(key1.to_vec()).unwrap(),
+                String::from_utf8(v1.to_vec()).unwrap(),
+            );
         }
         value
     }
 
-    fn to_json_bytes(&self) -> Vec<u8> where Self: Serialize {
+    fn to_json_bytes(&self) -> Vec<u8>
+    where
+        Self: Serialize,
+    {
         serde_json::to_vec(self).unwrap()
     }
 }
@@ -87,7 +91,6 @@ pub fn fixed_un_standard_json(src: &Vec<u8>) -> Vec<u8> {
     let zero = "0".as_bytes()[0];
     let nine = "9".as_bytes()[0];
 
-
     let bsol = 92u8; // \
 
     let mut dest: Vec<u8> = vec![];
@@ -101,7 +104,10 @@ pub fn fixed_un_standard_json(src: &Vec<u8>) -> Vec<u8> {
         // start { ,
 
         if quot_count % 2 == 0 && (src[i] == lcub || src[i] == comma) {
-            if src[i + 1] != quot && src[i + 1] != rcub && (src[i+1] >= zero && src[i+1] <= nine) {
+            if src[i + 1] != quot
+                && src[i + 1] != rcub
+                && (src[i + 1] >= zero && src[i + 1] <= nine)
+            {
                 dest.push(src[i]);
                 dest.push(quot);
                 continue;
@@ -119,7 +125,6 @@ pub fn fixed_un_standard_json(src: &Vec<u8>) -> Vec<u8> {
     }
     dest
 }
-
 
 #[allow(dead_code)]
 const PERM_PRIORITY: i32 = 0x1 << 3;
@@ -171,20 +176,22 @@ pub struct ConvertUtil;
 impl ConvertUtil {
     pub fn convert_string_bytes_to_i64(bytes: Vec<u8>) -> i64 {
         let str = String::from_utf8(bytes).unwrap();
-        let ret: i64 =  str.parse().unwrap();
+        let ret: i64 = str.parse().unwrap();
         ret
     }
 
     pub fn convert_string_bytes_to_i32(bytes: Vec<u8>) -> i32 {
         let str = String::from_utf8(bytes).unwrap();
-        let ret: i32 =  str.parse().unwrap();
+        let ret: i32 = str.parse().unwrap();
         ret
     }
 }
 
 pub fn get_current_time_millis() -> i64 {
     let now = std::time::SystemTime::now();
-    let duration = now.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap();
+    let duration = now
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap();
     return duration.as_millis() as i64;
 }
 
@@ -194,8 +201,8 @@ pub async fn sleep(millis: u64) {
 
 #[cfg(test)]
 mod test {
-    use serde_json::Value;
     use crate::protocols::fixed_un_standard_json;
+    use serde_json::Value;
 
     #[test]
     fn calc_ascii() {
@@ -206,7 +213,7 @@ mod test {
             src.push(data[i]);
         }
         let dest = fixed_un_standard_json(&src);
-        let _val : Value = serde_json::from_slice(&dest).unwrap();
+        let _val: Value = serde_json::from_slice(&dest).unwrap();
         println!("dest data:{}", String::from_utf8(dest).unwrap());
     }
 
@@ -219,7 +226,7 @@ mod test {
             src.push(data[i]);
         }
         let dest = fixed_un_standard_json(&src);
-        let _val : Value = serde_json::from_slice(&dest).unwrap();
+        let _val: Value = serde_json::from_slice(&dest).unwrap();
         println!("dest data:{}", String::from_utf8(dest).unwrap());
     }
 }

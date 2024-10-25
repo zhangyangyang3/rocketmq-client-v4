@@ -1,13 +1,11 @@
-
-pub mod topic_route_data;
 pub mod queue_data;
+pub mod topic_route_data;
 
 pub mod broker_data;
 
 pub mod cluster_info;
 
 pub mod message_queue;
-
 
 pub mod message_body;
 

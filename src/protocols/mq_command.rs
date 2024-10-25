@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::sync::{LazyLock};
 use atomic_counter::{AtomicCounter, ConsistentCounter};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt};
-use tokio::net::tcp::{OwnedReadHalf};
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use tokio::io::AsyncReadExt;
+use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::TcpStream;
 
 /**
@@ -48,18 +48,15 @@ e_body 	int32 	payload of extended fields
 
 const LANGUAGE_FLAG: i8 = 12; // 12 is define as rust
 pub const VERSION_FLAG: i16 = 63;
-static OPAQUE: LazyLock<ConsistentCounter> = LazyLock::new(||{
-    ConsistentCounter::new(200)
-});
+static OPAQUE: LazyLock<ConsistentCounter> = LazyLock::new(|| ConsistentCounter::new(200));
 
 pub const HEADER_SERIALIZE_METHOD_JSON: u8 = 0;
 pub const HEADER_SERIALIZE_METHOD_PRIVATE: u8 = 1;
 
-
 #[derive(Debug, Deserialize, Serialize)]
 #[allow(non_snake_case)]
 pub struct RemotingCommand {
-//private int code;
+    //private int code;
     //     private LanguageCode language = LanguageCode.JAVA;
     //     private int version = 0;
     //     private int opaque = requestId.getAndIncrement();
@@ -73,22 +70,23 @@ pub struct RemotingCommand {
     pub flag: i32,
     pub remark: Option<String>,
     pub extFields: HashMap<String, String>,
-    pub serializeTypeCurrentRPC: Option<String>
+    pub serializeTypeCurrentRPC: Option<String>,
 }
 
 impl RemotingCommand {
     pub fn get_language_i16(&self) -> i16 {
         return match self.language.as_str() {
-            "JAVA" =>  0,
-            _ => 7
-        }
+            "JAVA" => 0,
+            _ => 7,
+        };
     }
 }
 
 #[derive(Debug)]
 pub struct MqCommand {
     pub req_code: i16,
-    pub l_flag: i8, /** for rust ,it always 7, means other language */
+    pub l_flag: i8,
+    /** for rust ,it always 7, means other language */
     pub v_flag: i16,
     pub opaque: i32,
     pub request_flag: i32,
@@ -101,7 +99,6 @@ pub struct MqCommand {
 }
 
 impl MqCommand {
-
     pub fn new() -> MqCommand {
         return MqCommand {
             req_code: 0,
@@ -118,7 +115,12 @@ impl MqCommand {
         };
     }
 
-    pub fn new_with_body(req_code: i16, r_body: Vec<u8>, e_body: Vec<u8>, body: Vec<u8>) -> MqCommand {
+    pub fn new_with_body(
+        req_code: i16,
+        r_body: Vec<u8>,
+        e_body: Vec<u8>,
+        body: Vec<u8>,
+    ) -> MqCommand {
         return MqCommand {
             req_code,
             l_flag: LANGUAGE_FLAG,
@@ -130,13 +132,11 @@ impl MqCommand {
             e_len: e_body.len() as i32,
             e_body,
             body,
-            header_serialize_method: HEADER_SERIALIZE_METHOD_PRIVATE
+            header_serialize_method: HEADER_SERIALIZE_METHOD_PRIVATE,
         };
     }
 
-
     pub async fn read_from_stream_with_opaque(broker_stream: &mut TcpStream, opaque: i32) -> Self {
-
         for _ in 0..5 {
             let cmd = Self::read_from_stream(broker_stream).await;
             if cmd.opaque != opaque {
@@ -168,8 +168,7 @@ impl MqCommand {
         cmd
     }
 
-
-    pub async fn read_from_read_half(stream:&mut OwnedReadHalf) -> Self {
+    pub async fn read_from_read_half(stream: &mut OwnedReadHalf) -> Self {
         stream.readable().await.unwrap();
         let size = stream.read_i32().await;
         if size.is_err() {
@@ -189,10 +188,9 @@ impl MqCommand {
         cmd
     }
 
-
     /**
-        convert a command to bytes
-     */
+       convert a command to bytes
+    */
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = BytesMut::with_capacity(1024);
         buf.put_i16(self.req_code);
@@ -214,9 +212,9 @@ impl MqCommand {
         header_buf[3] = ((header_len) & 0xFF) as u8;
         let body_len: i32 = self.body.len() as i32;
         // frame_size = header_len(4byte) + header_data's len + body_data's len
-        let frame_size: i32  =  4 + header_len + body_len;
+        let frame_size: i32 = 4 + header_len + body_len;
 
-        let mut total_frame = BytesMut::with_capacity( (4 + frame_size) as usize);
+        let mut total_frame = BytesMut::with_capacity((4 + frame_size) as usize);
         total_frame.put_i32(frame_size);
         total_frame.put_slice(&header_buf);
         total_frame.put_slice(&header_body);
@@ -224,9 +222,7 @@ impl MqCommand {
         return total_frame.to_vec();
     }
 
-
     pub fn convert_bytes_to_mq_command(bytes: Vec<u8>) -> MqCommand {
-
         let mut buf = Bytes::from(bytes);
         if buf.len() < 4 {
             panic!("invalid body. the len less than 4!");
@@ -234,7 +230,11 @@ impl MqCommand {
 
         let frame_size = buf.get_i32();
         if buf.len() as i32 != frame_size {
-            panic!("invalid body. the len is not equal to frame_size!, frame_size: {}, buf_len: {}", frame_size, buf.len());
+            panic!(
+                "invalid body. the len is not equal to frame_size!, frame_size: {}, buf_len: {}",
+                frame_size,
+                buf.len()
+            );
         }
 
         let header_len = buf.get_i32();
@@ -244,13 +244,13 @@ impl MqCommand {
         let mut head_buf = Bytes::from(header_body);
         if header_serialize_method == HEADER_SERIALIZE_METHOD_JSON {
             let remoting_cmd: RemotingCommand = serde_json::from_slice(&head_buf.to_vec()).unwrap();
-            let r_body = if remoting_cmd.remark.is_none(){
+            let r_body = if remoting_cmd.remark.is_none() {
                 vec![]
             } else {
                 Vec::from(remoting_cmd.remark.unwrap().to_string())
             };
 
-            let ext_fields = if remoting_cmd.extFields.is_empty(){
+            let ext_fields = if remoting_cmd.extFields.is_empty() {
                 vec![]
             } else {
                 Vec::from(serde_json::to_string(&remoting_cmd.extFields).unwrap())
@@ -259,7 +259,7 @@ impl MqCommand {
             let body_len = buf.remaining();
             let body = buf.copy_to_bytes(body_len).to_vec();
 
-            return MqCommand{
+            return MqCommand {
                 req_code: remoting_cmd.code,
                 l_flag: 0,
                 v_flag: 0,
@@ -307,7 +307,6 @@ impl MqCommand {
             body,
             header_serialize_method,
         }
-
     }
 
     pub fn convert_extend_header_to_json(&self) -> String {
@@ -327,7 +326,10 @@ impl MqCommand {
                         let k_name = data.copy_to_bytes(k_len as usize);
                         let v_len = data.get_i32();
                         let v_value = data.copy_to_bytes(v_len as usize);
-                        map.insert(String::from_utf8(k_name.to_vec()).unwrap(), String::from_utf8(v_value.to_vec()).unwrap());
+                        map.insert(
+                            String::from_utf8(k_name.to_vec()).unwrap(),
+                            String::from_utf8(v_value.to_vec()).unwrap(),
+                        );
                     }
 
                     serde_json::to_string(&map).unwrap()
@@ -338,11 +340,8 @@ impl MqCommand {
                 warn!("not support header_serialize_method");
                 panic!("not support header_serialize_method");
             }
-
         }
-
     }
-
 }
 
 #[cfg(test)]
@@ -353,7 +352,7 @@ mod test {
     fn auto_incr_test() {
         let c = ConsistentCounter::new(0);
         for _ in 0..5 {
-            let k =c.add(1) as i32;
+            let k = c.add(1) as i32;
             println!("k value is :{k}");
         }
     }

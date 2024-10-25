@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::protocols::{get_current_time_millis, SerializeDeserialize};
 use bytes::{BufMut, BytesMut};
 use serde::Serialize;
-use crate::protocols::{get_current_time_millis, SerializeDeserialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
@@ -21,9 +21,13 @@ pub struct SendMessageRequestHeader {
     pub maxReconsumeTimes: i32,
 }
 
-
 impl SendMessageRequestHeader {
-    pub fn new(producer_group: String, topic: String, queue_id: i32, properties: &HashMap<String, String>) -> Self {
+    pub fn new(
+        producer_group: String,
+        topic: String,
+        queue_id: i32,
+        properties: &HashMap<String, String>,
+    ) -> Self {
         SendMessageRequestHeader {
             producerGroup: producer_group,
             topic,
@@ -58,9 +62,7 @@ impl SendMessageRequestHeader {
     }
 }
 
-impl SerializeDeserialize for SendMessageRequestHeader {
-}
-
+impl SerializeDeserialize for SendMessageRequestHeader {}
 
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
@@ -68,16 +70,16 @@ pub struct SendMessageRequestHeaderV2 {
     pub a: String, // producerGroup
     pub b: String, //topic
     pub c: String, // defaultTopic
-    pub d: i32, // defaultTopicQueueNums
-    pub e: i32, // queueId
-    pub f: i32, // sysFlag
-    pub g: i64, // bornTimestamp
-    pub h: i32, // flag
+    pub d: i32,    // defaultTopicQueueNums
+    pub e: i32,    // queueId
+    pub f: i32,    // sysFlag
+    pub g: i64,    // bornTimestamp
+    pub h: i32,    // flag
     pub i: String, // properties
-    pub j: i32, //reconsumeTimes
-    pub k: bool, //unitMode
-    pub l: i32, //consumeRetryTimes
-    pub m: bool, // batch
+    pub j: i32,    //reconsumeTimes
+    pub k: bool,   //unitMode
+    pub l: i32,    //consumeRetryTimes
+    pub m: bool,   // batch
 }
 
 impl SendMessageRequestHeaderV2 {
@@ -103,7 +105,7 @@ impl SendMessageRequestHeaderV2 {
 impl SerializeDeserialize for SendMessageRequestHeaderV2 {
     fn to_bytes_1(&self) -> Vec<u8>
     where
-        Self: Serialize
+        Self: Serialize,
     {
         let mut buf = BytesMut::with_capacity(128);
         buf.put_i16(1);

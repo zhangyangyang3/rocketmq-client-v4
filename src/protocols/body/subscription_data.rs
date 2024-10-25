@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::protocols::get_current_time_millis;
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Eq, PartialEq, Hash)]
 #[allow(non_snake_case)]
@@ -14,7 +14,6 @@ pub struct SubscriptionData {
     //
     //     @JSONField(serialize = false)
     //     private String filterClassSource;
-
     pub classFilterMode: bool,
     pub topic: String,
     pub subString: String,
@@ -23,7 +22,6 @@ pub struct SubscriptionData {
     pub subVersion: i64,
     pub expressionType: String,
     pub filterClassSource: String,
-
 }
 
 impl SubscriptionData {

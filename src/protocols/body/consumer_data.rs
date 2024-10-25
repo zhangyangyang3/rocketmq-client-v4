@@ -1,6 +1,5 @@
-use serde::Serialize;
 use crate::protocols::body::subscription_data::SubscriptionData;
-
+use serde::Serialize;
 
 pub const CONSUME_TYPE_PULL: &'static str = "CONSUME_ACTIVELY";
 pub const CONSUME_TYPE_PUSH: &'static str = "CONSUME_PASSIVELY";

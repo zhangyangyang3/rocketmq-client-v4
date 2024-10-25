@@ -1,12 +1,11 @@
-use log::{debug, info, warn};
-use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 use crate::protocols::body::topic_route_data::TopicRouteData;
 use crate::protocols::mq_command::MqCommand;
 use crate::protocols::request_code::GET_ROUTE_BY_TOPIC;
 use crate::protocols::{fixed_un_standard_json, response_code, SerializeDeserialize};
-
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
 
 #[derive(Serialize, Deserialize)]
 pub struct GetRouteInfoRequestHeader {
@@ -14,12 +13,16 @@ pub struct GetRouteInfoRequestHeader {
 }
 
 impl GetRouteInfoRequestHeader {
-
     pub fn get_route_info_request(topic: &str) -> Self {
-        Self { topic: topic.to_string() }
+        Self {
+            topic: topic.to_string(),
+        }
     }
 
-    pub async fn get_topic_route_data(&self, name_server: &mut TcpStream) -> Option<TopicRouteData> {
+    pub async fn get_topic_route_data(
+        &self,
+        name_server: &mut TcpStream,
+    ) -> Option<TopicRouteData> {
         let header = self.to_bytes_1();
         let bytes = MqCommand::new_with_body(GET_ROUTE_BY_TOPIC, vec![], header, vec![]);
         let opa = bytes.opaque;
@@ -31,31 +34,39 @@ impl GetRouteInfoRequestHeader {
         }
         let _ = name_server.flush().await;
 
-        let cmd = MqCommand::read_from_stream_with_opaque(name_server, opa).await ;
+        let cmd = MqCommand::read_from_stream_with_opaque(name_server, opa).await;
 
-
-        info!("get_topic_route_data req opa:{}, resp opa{}, data:{}",opa , cmd.opaque, String::from_utf8(cmd.body.clone()).unwrap());
+        info!(
+            "get_topic_route_data req opa:{}, resp opa{}, data:{}",
+            opa,
+            cmd.opaque,
+            String::from_utf8(cmd.body.clone()).unwrap()
+        );
         return match cmd.req_code {
-                response_code::SUCCESS => {
-                    info!("before fixed:{:?}", String::from_utf8(cmd.body.clone()).unwrap());
-                    let body = fixed_un_standard_json(&cmd.body);
-                    info!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
-                    let data: TopicRouteData = serde_json::from_slice(&body).unwrap();
-                    debug!("topic route info:{:?}", data);
-                    return Some(data);
-                }
-                _ => {
-                    warn!("invalid response code:{}, {}", cmd.req_code, String::from_utf8(cmd.r_body).unwrap());
-                    None
-                }
+            response_code::SUCCESS => {
+                info!(
+                    "before fixed:{:?}",
+                    String::from_utf8(cmd.body.clone()).unwrap()
+                );
+                let body = fixed_un_standard_json(&cmd.body);
+                info!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
+                let data: TopicRouteData = serde_json::from_slice(&body).unwrap();
+                debug!("topic route info:{:?}", data);
+                return Some(data);
             }
-
+            _ => {
+                warn!(
+                    "invalid response code:{}, {}",
+                    cmd.req_code,
+                    String::from_utf8(cmd.r_body).unwrap()
+                );
+                None
+            }
+        };
     }
 }
 
-impl SerializeDeserialize for GetRouteInfoRequestHeader {
-
-}
+impl SerializeDeserialize for GetRouteInfoRequestHeader {}
 
 #[cfg(test)]
 mod test {
@@ -64,7 +75,9 @@ mod test {
 
     #[test]
     fn test_serialize() {
-        let header = GetRouteInfoRequestHeader { topic: "topic111".to_string() };
+        let header = GetRouteInfoRequestHeader {
+            topic: "topic111".to_string(),
+        };
         let bytes = header.to_bytes_1();
         println!("bytes:{:?}", bytes);
     }
