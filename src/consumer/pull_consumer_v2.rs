@@ -118,7 +118,7 @@ impl PullConsumer {
         tokio::spawn(async move {
             loop {
                 if !*run.read().await {
-                    info!("stop read and pull mq cmd");
+                    info!("stop write mq cmd to server");
                     let _ = write.shutdown().await;
                     break;
                 }
@@ -330,13 +330,6 @@ impl PullConsumer {
                 );
                 return;
             }
-            let total_message_queue =
-                fetch_message_queue(consumer.name_server_addr.as_str(), consumer.topic.as_str())
-                    .await;
-            if total_message_queue.is_empty() {
-                warn!("consumer list is empty");
-                return;
-            }
             let used_mqs: Vec<MessageQueue> =
                 Self::calc_used_queues(&consumer_list, consumer).await;
             info!("used consumer list:{:?}", &used_mqs);
@@ -499,7 +492,6 @@ impl PullConsumer {
                         let opaque = cmd.opaque;
                         debug!("send fetch queue offset, opaque:{}", opaque);
                         tx.send(cmd).await.unwrap();
-                        debug!("send fetch queue offset finish, opaque:{}", opaque);
                         Self::sleep(10).await;
                         continue;
                     }
