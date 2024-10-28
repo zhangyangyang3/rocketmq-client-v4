@@ -474,7 +474,7 @@ impl PullConsumer {
                             );
                         }
                     }
-                    Self::sleep(500).await;
+                    Self::sleep(100).await;
                     continue;
                 }
                 for queue in read_lock.iter() {
