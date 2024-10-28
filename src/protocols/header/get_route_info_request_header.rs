@@ -2,7 +2,7 @@ use crate::protocols::body::topic_route_data::TopicRouteData;
 use crate::protocols::mq_command::MqCommand;
 use crate::protocols::request_code::GET_ROUTE_BY_TOPIC;
 use crate::protocols::{fixed_un_standard_json, response_code, SerializeDeserialize};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -36,12 +36,12 @@ impl GetRouteInfoRequestHeader {
 
         let cmd = MqCommand::read_from_stream_with_opaque(name_server, opa).await;
 
-        info!(
-            "get_topic_route_data req opa:{}, resp opa{}, data:{}",
-            opa,
-            cmd.opaque,
-            String::from_utf8(cmd.body.clone()).unwrap()
-        );
+        // info!(
+        //     "get_topic_route_data req opa:{}, resp opa{}, data:{}",
+        //     opa,
+        //     cmd.opaque,
+        //     String::from_utf8(cmd.body.clone()).unwrap()
+        // );
         return match cmd.req_code {
             response_code::SUCCESS => {
                 // info!(

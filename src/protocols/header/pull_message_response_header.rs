@@ -1,6 +1,6 @@
 use crate::protocols::mq_command::HEADER_SERIALIZE_METHOD_JSON;
 use crate::protocols::SerializeDeserialize;
-use log::{debug, warn};
+use log::{warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
