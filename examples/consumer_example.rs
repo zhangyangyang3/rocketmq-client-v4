@@ -38,23 +38,16 @@ pub async fn main() {
     tokio::spawn(async move {
         consumer.start_consume(handle, run).await;
     });
-    {
-        let read1 = lock.read().await;
-        info!("run the task. wait stop:{:?}", *read1);
-        tokio::time::sleep(Duration::from_secs(20)).await;
-    }
+
+    tokio::time::sleep(Duration::from_secs(30)).await;
+
     {
         let mut run = lock.write().await;
         *run = false;
-        info!("run the task. set run = false");
     }
-    {
-        let read2 = lock.read().await;
-        info!("run the task. stop task :{:?}", *read2);
-    }
-    {
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let read3 = lock.read().await;
-        info!("quit the test: {:?}", *read3);
-    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+
+    info!("quit the test");
+
 }
