@@ -122,9 +122,14 @@ impl PullConsumer {
                     break;
                 }
                 let cmd = cmd_rx.recv().await;
-                let cmd = cmd.unwrap();
-                // debug!("read cmd from cmd_rx,:{:?}, req_code:{:?}", cmd.opaque, cmd.req_code);
-                Self::write_cmd_to_mq(cmd, &mut write, cmd_map.clone()).await;
+                match cmd {
+                    None => {
+                        break;
+                    }
+                    Some(real_cmd) => {
+                        Self::write_cmd_to_mq(real_cmd, &mut write, cmd_map.clone()).await;
+                    }
+                }
             }
         });
     }
@@ -522,7 +527,8 @@ impl PullConsumer {
                 let body = msg_rx.recv().await;
                 match body {
                     None => {
-                        debug!("receive non");
+                        debug!("channel closed");
+                        break;
                     }
                     Some(msg_body) => {
                         debug!(
