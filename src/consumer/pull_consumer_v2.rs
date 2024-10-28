@@ -119,6 +119,7 @@ impl PullConsumer {
             loop {
                 if !*run.read().await {
                     info!("stop read and pull mq cmd");
+                    let _ = write.shutdown().await;
                     break;
                 }
                 let cmd = cmd_rx.recv().await;
@@ -284,12 +285,12 @@ impl PullConsumer {
         cmd_map: Arc<DashMap<i32, MqCommand>>,
     ) {
         // send cmd to mq
-        debug!(
-            "write cmd to server:{:?}, req code:{}, opaque:{}",
-            write.local_addr(),
-            cmd.req_code,
-            cmd.opaque
-        );
+        // debug!(
+        //     "write cmd to server:{:?}, req code:{}, opaque:{}",
+        //     write.local_addr(),
+        //     cmd.req_code,
+        //     cmd.opaque
+        // );
         let req_code = cmd.req_code;
         let opaque = cmd.opaque;
         let bytes = cmd.to_bytes();
@@ -647,7 +648,7 @@ mod test {
         tokio::spawn(async move {
             consumer.start_consume(handle, run).await;
         });
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(40)).await;
         let mut run = lock.write().await;
         *run = false;
         tokio::time::sleep(Duration::from_secs(2)).await;
