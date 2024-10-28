@@ -159,6 +159,11 @@ impl PullConsumer {
                 }
                 // read cmd from mq
                 let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
+                if server_cmd.is_none() {
+                    warn!("read cmd from mq failed, remote addr:{:?}", read_half.peer_addr());
+                    break;
+                }
+                let server_cmd = server_cmd.unwrap();
                 // debug!(
                 //     "read cmd from server,:{:?}opaque:{}, req_code:{}, flag:{}",
                 //     read_half.local_addr(),

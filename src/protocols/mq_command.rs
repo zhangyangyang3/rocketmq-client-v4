@@ -168,11 +168,11 @@ impl MqCommand {
         cmd
     }
 
-    pub async fn read_from_read_half(stream: &mut OwnedReadHalf) -> Self {
-        stream.readable().await.unwrap();
+    pub async fn read_from_read_half(stream: &mut OwnedReadHalf) -> Option<Self> {
         let size = stream.read_i32().await;
         if size.is_err() {
-            panic!("read command from mq failed! {:?}", size.err());
+            warn!("read command from mq failed! {:?}", size.err());
+            return None;
         }
         let size = size.unwrap();
         let mut buf = vec![0u8; size as usize];
@@ -185,7 +185,7 @@ impl MqCommand {
         frame.put_slice(&buf.to_vec());
 
         let cmd = Self::convert_bytes_to_mq_command(frame.to_vec());
-        cmd
+        Some(cmd)
     }
 
     /**

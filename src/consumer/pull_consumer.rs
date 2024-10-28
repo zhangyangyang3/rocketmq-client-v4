@@ -228,6 +228,10 @@ impl MqConsumer {
                     break;
                 }
                 let mq_command = MqCommand::read_from_read_half(&mut read_half).await;
+                if mq_command.is_none() {
+                    break;
+                }
+                let mq_command = mq_command.unwrap();
                 unsafe {
                     let opaque_map = OPAQUE_TABLE.clone();
                     let mut opaque_map = opaque_map.write().await;
