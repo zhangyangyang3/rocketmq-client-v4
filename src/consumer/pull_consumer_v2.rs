@@ -159,13 +159,13 @@ impl PullConsumer {
                 }
                 // read cmd from mq
                 let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
-                debug!(
-                    "read cmd from server,:{:?}opaque:{}, req_code:{}, flag:{}",
-                    read_half.local_addr(),
-                    server_cmd.opaque,
-                    server_cmd.req_code,
-                    server_cmd.request_flag
-                );
+                // debug!(
+                //     "read cmd from server,:{:?}opaque:{}, req_code:{}, flag:{}",
+                //     read_half.local_addr(),
+                //     server_cmd.opaque,
+                //     server_cmd.req_code,
+                //     server_cmd.request_flag
+                // );
 
                 // server send request
                 match server_cmd.req_code {
@@ -509,7 +509,7 @@ impl PullConsumer {
                     .to_command();
                     tx.send(cmd).await.unwrap();
                 }
-                Self::sleep(500).await;
+                Self::sleep(100).await;
             }
         });
     }
