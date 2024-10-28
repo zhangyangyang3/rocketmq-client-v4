@@ -46,12 +46,12 @@ impl QueryConsumerOffsetRequestHeader {
 
     pub fn convert_from_cmd(cmd: &MqCommand) -> Self {
         //  e_body:Ok(\"\\0\\rconsumerGroup\\0\\0\\0 consume_pushNoticeMessage_test_2\\0\\u{7}queueId\\0\\0\\0\\u{1}0\\0\\u{5}topic\\0\\0\\0\\u{14}pushNoticeMessage_To\")
-        debug!(
-            "QueryConsumerOffsetRequestHeader: body:{:?}, r_body:{:?}, e_body:{:?}",
-            String::from_utf8(cmd.body.clone()),
-            String::from_utf8(cmd.r_body.clone()),
-            String::from_utf8(cmd.e_body.clone())
-        );
+        // debug!(
+        //     "QueryConsumerOffsetRequestHeader: body:{:?}, r_body:{:?}, e_body:{:?}",
+        //     String::from_utf8(cmd.body.clone()),
+        //     String::from_utf8(cmd.r_body.clone()),
+        //     String::from_utf8(cmd.e_body.clone())
+        // );
         let body = &cmd.e_body;
         let mut body = Bytes::copy_from_slice(body);
 

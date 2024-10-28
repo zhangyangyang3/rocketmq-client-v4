@@ -123,7 +123,7 @@ impl PullConsumer {
                 }
                 let cmd = cmd_rx.recv().await;
                 let cmd = cmd.unwrap();
-                debug!("read cmd from cmd_rx,:{:?}", cmd.opaque);
+                // debug!("read cmd from cmd_rx,:{:?}, req_code:{:?}", cmd.opaque, cmd.req_code);
                 Self::write_cmd_to_mq(cmd, &mut write, cmd_map.clone()).await;
             }
         });

@@ -44,12 +44,12 @@ impl GetRouteInfoRequestHeader {
         );
         return match cmd.req_code {
             response_code::SUCCESS => {
-                info!(
-                    "before fixed:{:?}",
-                    String::from_utf8(cmd.body.clone()).unwrap()
-                );
+                // info!(
+                //     "before fixed:{:?}",
+                //     String::from_utf8(cmd.body.clone()).unwrap()
+                // );
                 let body = fixed_un_standard_json(&cmd.body);
-                info!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
+                // info!("after fixed:{:?}", String::from_utf8(body.clone()).unwrap());
                 let data: TopicRouteData = serde_json::from_slice(&body).unwrap();
                 debug!("topic route info:{:?}", data);
                 return Some(data);
