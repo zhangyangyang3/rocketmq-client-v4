@@ -25,7 +25,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 
@@ -82,12 +81,10 @@ impl PullConsumer {
             let consumer = consumer.clone();
             let run = run.clone();
             Self::send_heartbeat(cmd_tx.clone(), consumer.clone()).await;
-            Self::read_and_write_cmd(
+            Self::read_cmd(
                 read_half,
-                write,
-                cmd_rx,
                 cmd_tx.clone(),
-                cmd_map,
+                cmd_map.clone(),
                 queue_offset_map.clone(),
                 queue_list.clone(),
                 msg_tx.clone(),
@@ -95,6 +92,8 @@ impl PullConsumer {
                 run.clone(),
             )
             .await;
+
+            Self::write_cmd(cmd_rx, write, cmd_map.clone(), run.clone()).await;
 
             Self::do_pull_message(
                 cmd_tx.clone(),
@@ -110,10 +109,28 @@ impl PullConsumer {
         }
     }
 
-    async fn read_and_write_cmd(
-        mut read_half: OwnedReadHalf,
-        mut write: OwnedWriteHalf,
+    async fn write_cmd(
         mut cmd_rx: Receiver<MqCommand>,
+        mut write: OwnedWriteHalf,
+        cmd_map: Arc<DashMap<i32, MqCommand>>,
+        run: Arc<RwLock<bool>>,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                if !*run.read().await {
+                    info!("stop read and pull mq cmd");
+                    break;
+                }
+                let cmd = cmd_rx.recv().await;
+                let cmd = cmd.unwrap();
+                debug!("read cmd from cmd_rx,:{:?}", cmd.opaque);
+                Self::write_cmd_to_mq(cmd, &mut write, cmd_map.clone()).await;
+            }
+        });
+    }
+
+    async fn read_cmd(
+        mut read_half: OwnedReadHalf,
         cmd_tx: Sender<MqCommand>,
         cmd_map: Arc<DashMap<i32, MqCommand>>,
         queue_offset_map: Arc<DashMap<i32, i64>>,
@@ -123,101 +140,133 @@ impl PullConsumer {
         run: Arc<RwLock<bool>>,
     ) {
         tokio::spawn(async move {
-            let mut count = 0;
             loop {
-                count = count + 1;
                 if !*run.read().await {
                     info!("stop read and pull mq cmd");
                     break;
                 }
-                info!("read_and_write_cmd:{}", count);
-                select! {
-                    cmd = cmd_rx.recv() => {
-                        Self::write_cmd_to_mq(cmd.unwrap(), &mut write, cmd_map.clone()).await;
+
+                let readable = read_half.readable().await;
+                if readable.is_err() {
+                    warn!("mq broker stream broken. remote addr:{:?}", read_half.peer_addr());
+                    break;
+                }
+                // read cmd from mq
+                let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
+                debug!(
+                    "read cmd from server,:{:?}opaque:{}, req_code:{}, flag:{}",
+                    read_half.local_addr(),
+                    server_cmd.opaque,
+                    server_cmd.req_code,
+                    server_cmd.request_flag
+                );
+
+                // server send request
+                match server_cmd.req_code {
+                    request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
+                        // re balance
+                        let header =
+                            NotifyConsumerIdsChangedRequestHeader::convert_from_cmd(&server_cmd);
+                        let consume_group = header.consumerGroup.as_str();
+
+                        let req =
+                            GetConsumerListByGroupRequestHeader::new(consume_group.to_string())
+                                .to_command();
+                        cmd_tx.send(req).await.unwrap();
+                        info!("NOTIFY_CONSUMER_IDS_CHANGED, do re balance");
                     }
-                    _ = read_half.readable() => {
-                        // read cmd from mq
-                        let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
-                        debug!("read cmd from server,:{:?}opaque:{}, req_code:{}, flag:{}",read_half.local_addr(), server_cmd.opaque, server_cmd.req_code, server_cmd.request_flag);
 
-                        // server send request
-                            match server_cmd.req_code {
-                                request_code::NOTIFY_CONSUMER_IDS_CHANGED => {
-                                    // re balance
-                                    let header = NotifyConsumerIdsChangedRequestHeader::convert_from_cmd(&server_cmd);
-                                    let consume_group = header.consumerGroup.as_str();
+                    response_code::TOPIC_NOT_EXIST => {
+                        warn!(
+                            "topic not exits:{:?}",
+                            String::from_utf8(server_cmd.r_body.clone())
+                        );
+                    }
 
-                                    let req = GetConsumerListByGroupRequestHeader::new(consume_group.to_string()).to_command();
-                                    cmd_tx.send(req).await.unwrap();
-                                    info!("NOTIFY_CONSUMER_IDS_CHANGED, do re balance");
-                                }
+                    request_code::GET_CONSUMER_RUNNING_INFO => {
+                        let header =
+                            GetConsumerRunningInfoRequestHeader::convert_from_command(&server_cmd);
+                        if header.consumerGroup != consumer.consume_group
+                            || header.clientId != consumer.client_id
+                        {
+                            warn!(
+                                "GET_CONSUMER_RUNNING_INFO, server req:{:?}, current consumer:{:?}",
+                                header, consumer
+                            );
+                            return;
+                        }
+                        let queues = queue_list.read().await;
+                        let run_info = ConsumerRunningInfo::build_pull_consumer_running_info(
+                            &consumer,
+                            queues.deref(),
+                        );
+                        let cmd = run_info.to_command(server_cmd.opaque);
+                        cmd_tx.send(cmd).await.unwrap();
+                    }
 
-                                response_code::TOPIC_NOT_EXIST => {
-                                    warn!("topic not exits:{:?}", String::from_utf8(server_cmd.r_body.clone()));
-                                }
-
-                                request_code::GET_CONSUMER_RUNNING_INFO => {
-                                    let header = GetConsumerRunningInfoRequestHeader::convert_from_command(&server_cmd);
-                                    if header.consumerGroup != consumer.consume_group || header.clientId != consumer.client_id {
-                                        warn!("GET_CONSUMER_RUNNING_INFO, server req:{:?}, current consumer:{:?}", header, consumer);
-                                        return;
-                                    }
-                                    let queues = queue_list.read().await;
-                                    let run_info = ConsumerRunningInfo::build_pull_consumer_running_info(&consumer, queues.deref());
-                                    let cmd = run_info.to_command(server_cmd.opaque);
-                                    cmd_tx.send(cmd).await.unwrap();
-                                }
-
-                                _ =>{
-
-                                    let req_cmd = cmd_map.remove(&server_cmd.opaque);
-                                    if req_cmd.is_none(){
-                                            warn!("can not find request cmd for opaque:{}, req_cmd:{:?}", server_cmd.opaque, req_cmd);
-                                            return;
-                                    }
-                                    let req_cmd = req_cmd.unwrap().1;
-                                    match req_cmd.req_code {
-                                    request_code::PULL_MESSAGE => {
-                                        Self::do_consume_message(server_cmd, msg_tx.clone(), cmd_tx.clone(),queue_offset_map.clone(), &consumer).await;
-                                    },
-                                    request_code::HEART_BEAT => {
-                                        debug!("send heart beat. resp code:{:?}. remark:{:?}", server_cmd.req_code, String::from_utf8(server_cmd.r_body.clone()));
-                                    },
-                                    request_code::QUERY_CONSUMER_OFFSET => {
-                                        let req = QueryConsumerOffsetRequestHeader::convert_from_cmd(&req_cmd);
-                                        let offset = QueryConsumerOffsetResponseHeader::convert_from_command(server_cmd);
-                                        let offset = match offset {
-                                            None => { -1 }
-                                            Some(o) => { o.offset }
-                                        };
-                                        if offset >= 0 {
-                                            queue_offset_map.insert(req.queueId, offset);
-                                        }
-                                    },
-                                    request_code::GET_CONSUMER_LIST_BY_GROUP => {
-                                        Self::do_balance(&req_cmd, &server_cmd, &consumer,&mut queue_list).await;
-                                    },
-                                    request_code::UPDATE_CONSUMER_OFFSET => {
-                                        // do nothing
-                                        // update offset
-                                        // let header = UpdateConsumerOffsetRequestHeader::convert_from_command(&req_cmd);
-                                        // set_local_consumer_offset(header.topic.as_str(), header.queueId, header.commitOffset).await;
-                                    },
-                                    response_code::SUCCESS => {
-                                        info!("get server resp. req cmd:{:?}, opaque:{:?},remark:{:?}, extend:{:?}, body:{:?}"
-                                            , req_cmd.req_code, req_cmd.opaque, String::from_utf8(server_cmd.r_body.clone())
-                                            , String::from_utf8(server_cmd.e_body.clone()), String::from_utf8(server_cmd.body));
-                                    },
-
-                                    code => {
-                                        warn!("get an not support request code:{:?}", code);
-                                    }
-
+                    _ => {
+                        let req_cmd = cmd_map.remove(&server_cmd.opaque);
+                        if req_cmd.is_none() {
+                            warn!(
+                                "can not find request cmd for opaque:{}, req_cmd:{:?}",
+                                server_cmd.opaque, req_cmd
+                            );
+                            return;
+                        }
+                        let req_cmd = req_cmd.unwrap().1;
+                        match req_cmd.req_code {
+                            request_code::PULL_MESSAGE => {
+                                Self::do_consume_message(
+                                    server_cmd,
+                                    msg_tx.clone(),
+                                    cmd_tx.clone(),
+                                    queue_offset_map.clone(),
+                                    &consumer,
+                                )
+                                .await;
+                            }
+                            request_code::HEART_BEAT => {
+                                debug!(
+                                    "send heart beat. resp code:{:?}. remark:{:?}",
+                                    server_cmd.req_code,
+                                    String::from_utf8(server_cmd.r_body.clone())
+                                );
+                            }
+                            request_code::QUERY_CONSUMER_OFFSET => {
+                                let req =
+                                    QueryConsumerOffsetRequestHeader::convert_from_cmd(&req_cmd);
+                                let offset =
+                                    QueryConsumerOffsetResponseHeader::convert_from_command(
+                                        server_cmd,
+                                    );
+                                let offset = match offset {
+                                    None => -1,
+                                    Some(o) => o.offset,
+                                };
+                                if offset >= 0 {
+                                    queue_offset_map.insert(req.queueId, offset);
                                 }
                             }
+                            request_code::GET_CONSUMER_LIST_BY_GROUP => {
+                                Self::do_balance(&req_cmd, &server_cmd, &consumer, &mut queue_list)
+                                    .await;
+                            }
+                            request_code::UPDATE_CONSUMER_OFFSET => {
+                                // do nothing
+                                // update offset
+                                // let header = UpdateConsumerOffsetRequestHeader::convert_from_command(&req_cmd);
+                                // set_local_consumer_offset(header.topic.as_str(), header.queueId, header.commitOffset).await;
+                            }
+                            response_code::SUCCESS => {
+                                info!("get server resp. req cmd:{:?}, opaque:{:?},remark:{:?}, extend:{:?}, body:{:?}"
+                                            , req_cmd.req_code, req_cmd.opaque, String::from_utf8(server_cmd.r_body.clone())
+                                            , String::from_utf8(server_cmd.e_body.clone()), String::from_utf8(server_cmd.body));
+                            }
 
+                            code => {
+                                warn!("get an not support request code:{:?}", code);
+                            }
                         }
-
                     }
                 }
             }
@@ -433,7 +482,10 @@ impl PullConsumer {
                             queue.queueId,
                         )
                         .to_command();
+                        let opaque = cmd.opaque;
+                        debug!("send fetch queue offset, opaque:{}", opaque);
                         tx.send(cmd).await.unwrap();
+                        debug!("send fetch queue offset finish, opaque:{}", opaque);
                         Self::sleep(10).await;
                         continue;
                     }
