@@ -1,6 +1,5 @@
 use crate::connection::{get_client_ip, MqConnection};
 use crate::consumer::message_handler::MessageHandler;
-use crate::consumer::pull_consumer::fetch_message_queue;
 use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
 use crate::protocols::body::consumer_running_info::ConsumerRunningInfo;
 use crate::protocols::body::heartbeat_data::HeartbeatData;
@@ -16,9 +15,7 @@ use crate::protocols::header::query_consumer_offset_request_header::QueryConsume
 use crate::protocols::header::query_consumer_offset_response_header::QueryConsumerOffsetResponseHeader;
 use crate::protocols::header::update_consumer_offset_request_header::UpdateConsumerOffsetRequestHeader;
 use crate::protocols::mq_command::MqCommand;
-use crate::protocols::{
-    get_current_time_millis, request_code, response_code, SerializeDeserialize,
-};
+use crate::protocols::{get_current_time_millis, PermName, request_code, response_code, SerializeDeserialize};
 use dashmap::DashMap;
 use log::{debug, info, warn};
 use std::ops::Deref;
@@ -27,6 +24,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
+use crate::protocols::body::topic_route_data::TopicRouteData;
 
 #[derive(Debug, Clone)]
 pub struct PullConsumer {
@@ -157,6 +155,8 @@ impl PullConsumer {
                     warn!("mq broker stream broken. remote addr:{:?}", read_half.peer_addr());
                     break;
                 }
+                let broker_addr = read_half.peer_addr().unwrap().to_string();
+
                 // read cmd from mq
                 let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
                 if server_cmd.is_none() {
@@ -259,7 +259,7 @@ impl PullConsumer {
                                 }
                             }
                             request_code::GET_CONSUMER_LIST_BY_GROUP => {
-                                Self::do_balance(&req_cmd, &server_cmd, &consumer, &mut queue_list)
+                                Self::do_balance(&req_cmd, &server_cmd, &consumer, &mut queue_list, broker_addr.as_str())
                                     .await;
                             }
                             request_code::UPDATE_CONSUMER_OFFSET => {
@@ -318,6 +318,7 @@ impl PullConsumer {
         resp_cmd: &MqCommand,
         consumer: &Arc<PullConsumer>,
         queue_list: &mut Arc<RwLock<Vec<MessageQueue>>>,
+        broker_addr: &str
     ) {
         let consumer_list = GetConsumerListByGroupRequestHeader::build_consumer_list(&resp_cmd);
         let req_header = GetConsumerListByGroupRequestHeader::build_from_cmd(&req_cmd);
@@ -331,7 +332,7 @@ impl PullConsumer {
                 return;
             }
             let used_mqs: Vec<MessageQueue> =
-                Self::calc_used_queues(&consumer_list, consumer).await;
+                Self::calc_used_queues(&consumer_list, consumer, broker_addr).await;
             info!("used consumer list:{:?}", &used_mqs);
             let mut write_lock = queue_list.write().await;
             *write_lock = used_mqs;
@@ -545,6 +546,7 @@ impl PullConsumer {
     async fn calc_used_queues(
         consumer_list: &Vec<String>,
         consumer: &Arc<PullConsumer>,
+        broker_addr: &str
     ) -> Vec<MessageQueue> {
         let mut used_mqs: Vec<MessageQueue> = vec![];
         if !consumer_list.contains(&consumer.client_id) {
@@ -556,7 +558,7 @@ impl PullConsumer {
         }
 
         let total_message_queue =
-            fetch_message_queue(consumer.name_server_addr.as_str(), consumer.topic.as_str()).await;
+            Self::fetch_message_queue(consumer.name_server_addr.as_str(), consumer.topic.as_str(), broker_addr).await;
         if total_message_queue.is_empty() {
             warn!("consumer list is empty");
             return used_mqs;
@@ -596,6 +598,44 @@ impl PullConsumer {
 
     async fn sleep(ms: u64) {
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+    }
+
+
+    pub async fn fetch_message_queue(name_server: &str, topic: &str, broker_addr: &str) -> Vec<MessageQueue> {
+        let topic_route_data = MqConnection::get_topic_route_data(name_server, topic).await;
+        if topic_route_data.is_none() {
+            warn!("no topic_route_data. may by you should create topic first");
+            panic!("no topic_route_data.");
+        }
+
+        let topic_route_data = topic_route_data.unwrap();
+        let broker_name = Self::get_broker_name_by_addr(&topic_route_data, broker_addr);
+        let mut qds = topic_route_data.queueDatas;
+        qds.sort_by_key(|k| k.brokerName.clone());
+
+        let mut mq_list = vec![];
+
+        // this is subscribed message queue
+        for qd in qds.iter_mut() {
+            if PermName::is_readable(qd.perm) && qd.brokerName == broker_name {
+                for i in 0..qd.readQueueNums {
+                    let mq = MessageQueue::new(topic.to_string(), qd.brokerName.clone(), i);
+                    mq_list.push(mq);
+                }
+            }
+        }
+        mq_list
+    }
+
+    fn get_broker_name_by_addr(topic_rote_data: &TopicRouteData, broker_addr: &str) -> String {
+        for x in &topic_rote_data.brokerDatas {
+            for v in x.brokerAddrs.values() {
+                if v == broker_addr {
+                    return x.brokerName.clone();
+                }
+            }
+        }
+        panic!("no broker addr : {} found in route data:{:?}", broker_addr, topic_rote_data);
     }
 }
 
@@ -645,7 +685,7 @@ mod test {
         tokio::spawn(async move {
             consumer.start_consume(handle, run).await;
         });
-        tokio::time::sleep(Duration::from_secs(40)).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
         let mut run = lock.write().await;
         *run = false;
         tokio::time::sleep(Duration::from_secs(2)).await;
