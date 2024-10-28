@@ -1,4 +1,3 @@
-use crate::consumer::pull_consumer::MqConsumer;
 use crate::consumer::pull_consumer_v2::PullConsumer;
 use crate::protocols::body::consumer_data;
 use crate::protocols::body::message_queue::MessageQueue;
@@ -94,40 +93,6 @@ impl ConsumerRunningInfo {
         }
     }
 
-    pub fn build_consumer_running_info(consumer: MqConsumer) -> Self {
-        let sub = SubscriptionData::simple_new(consumer.topic.clone());
-        let mut set = HashSet::new();
-        set.insert(sub);
-        let mut properties = HashMap::new();
-        properties.insert(
-            "PROP_CONSUMER_START_TIMESTAMP".to_string(),
-            consumer.start_time.to_string(),
-        );
-        properties.insert(
-            "PROP_NAMESERVER_ADDR".to_string(),
-            consumer.name_server_addr.clone(),
-        );
-        properties.insert(
-            "PROP_CLIENT_VERSION".to_string(),
-            mq_command::VERSION_FLAG.to_string(),
-        );
-        properties.insert(
-            "PROP_CONSUME_TYPE".to_string(),
-            consumer_data::CONSUME_TYPE_PUSH.to_string(),
-        );
-        properties.insert("PROP_THREADPOOL_CORE_SIZE".to_string(), "1".to_string());
-        let mut mq_table = HashMap::new();
-        for x in &consumer.message_queues {
-            mq_table.insert(x.clone(), ProcessQueueInfo::new());
-        }
-        ConsumerRunningInfo {
-            properties,
-            subscription_set: set,
-            jstack: "".to_string(),
-            mq_table,
-        }
-    }
-
     pub fn to_command(&self, opaque: i32) -> MqCommand {
         let json = self.to_json();
         let mut cmd =
@@ -172,30 +137,5 @@ impl ConsumerRunningInfo {
         // end
         json.push_str("}");
         json
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::consumer::pull_consumer::MqConsumer;
-    use crate::protocols::body::consumer_running_info::ConsumerRunningInfo;
-    use crate::protocols::body::message_queue::MessageQueue;
-
-    #[test]
-    fn json_test() {
-        let topic = "test_topic";
-        let broker_name = "broker_name";
-        let mut consumer = MqConsumer::new_consumer(
-            "127.0.0.1:9876".to_string(),
-            "test_group".to_string(),
-            topic.to_string(),
-        );
-        let mq1 = MessageQueue::new(topic.to_string(), broker_name.to_string(), 1);
-        let mq2 = MessageQueue::new(topic.to_string(), broker_name.to_string(), 2);
-        consumer.message_queues.push(mq1);
-        consumer.message_queues.push(mq2);
-
-        let running_info = ConsumerRunningInfo::build_consumer_running_info(consumer);
-        println!("{}", running_info.to_json());
     }
 }
