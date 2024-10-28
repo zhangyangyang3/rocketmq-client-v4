@@ -78,7 +78,6 @@ impl PullConsumer {
             let cmd_map: Arc<DashMap<i32, MqCommand>> = Arc::new(DashMap::new());
             let queue_list: Arc<RwLock<Vec<MessageQueue>>> = Arc::new(RwLock::new(vec![]));
             let queue_offset_map = Arc::new(DashMap::<i32, i64>::new());
-            let last_pulled_queue_offset_map = Arc::new(DashMap::<i32, i64>::new());
             let consumer = consumer.clone();
             let run = run.clone();
             Self::send_heartbeat(cmd_tx.clone(), consumer.clone()).await;
@@ -87,7 +86,6 @@ impl PullConsumer {
                 cmd_tx.clone(),
                 cmd_map.clone(),
                 queue_offset_map.clone(),
-                last_pulled_queue_offset_map.clone(),
                 queue_list.clone(),
                 msg_tx.clone(),
                 consumer.clone(),
@@ -136,7 +134,6 @@ impl PullConsumer {
         cmd_tx: Sender<MqCommand>,
         cmd_map: Arc<DashMap<i32, MqCommand>>,
         queue_offset_map: Arc<DashMap<i32, i64>>,
-        pulled_queue_offset_map: Arc<DashMap<i32, i64>>,
         mut queue_list: Arc<RwLock<Vec<MessageQueue>>>,
         msg_tx: Sender<MessageBody>,
         consumer: Arc<PullConsumer>,
@@ -224,7 +221,6 @@ impl PullConsumer {
                                     msg_tx.clone(),
                                     cmd_tx.clone(),
                                     queue_offset_map.clone(),
-                                    pulled_queue_offset_map.clone(),
                                     &consumer,
                                 )
                                 .await;
@@ -345,7 +341,6 @@ impl PullConsumer {
         msg_sender: Sender<MessageBody>,
         cmd_sender: Sender<MqCommand>,
         queue_offset_map: Arc<DashMap<i32, i64>>,
-        pulled_queue_offset_map: Arc<DashMap<i32, i64>>,
         consumer: &Arc<PullConsumer>,
     ) {
         let response_header = PullMessageResponseHeader::bytes_to_header(
@@ -358,6 +353,7 @@ impl PullConsumer {
             let response_header = response_header.unwrap();
             offset = response_header.nextBeginOffset.unwrap();
         }
+
         match server_cmd.req_code {
             response_code::SUCCESS => {
                 let r_body = String::from_utf8(server_cmd.r_body.clone()).unwrap();
@@ -367,11 +363,11 @@ impl PullConsumer {
 
                         debug!("message count:{}", bodies.len());
                         let temp = bodies.get(0).unwrap();
-                        let pulled_offset = match queue_offset_map.get(&temp.queue_id) {
+                        let old_offset = match queue_offset_map.get(&temp.queue_id) {
                             Some(v) => v.value().clone(),
                             None => -1,
                         };
-                        if pulled_offset >= offset {
+                        if old_offset >= offset {
                             debug!(
                                 "topic:{}, queue:{}, offset:{} already pulled.",
                                 temp.topic.as_str(),
@@ -388,6 +384,7 @@ impl PullConsumer {
                                 m.queue_id,
                                 m.msg_id.as_str()
                             );
+
                             let send = msg_sender.send(m.clone()).await;
                             if send.is_err() {
                                 warn!("consume message failed:{:?}", send.err());
@@ -396,7 +393,6 @@ impl PullConsumer {
                         }
 
                         queue_offset_map.insert(temp.queue_id, offset);
-                        pulled_queue_offset_map.insert(temp.queue_id, pulled_offset);
                         let update_offset = UpdateConsumerOffsetRequestHeader::new(
                             consumer.consume_group.clone(),
                             consumer.topic.clone(),
