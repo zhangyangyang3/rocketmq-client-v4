@@ -62,10 +62,10 @@ impl PullMessageResponseHeader {
 }
 impl SerializeDeserialize for PullMessageResponseHeader {
     fn bytes_1_to_header(bytes: Vec<u8>) -> Option<Box<Self>> {
-        debug!(
-            "pull message response header:{:?}",
-            String::from_utf8(bytes.clone())
-        );
+        // debug!(
+        //     "pull message response header:{:?}",
+        //     String::from_utf8(bytes.clone())
+        // );
         if bytes.len() <= 0 {
             warn!("header is empty");
             return None;

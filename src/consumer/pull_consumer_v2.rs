@@ -63,7 +63,7 @@ impl PullConsumer {
     }
     pub async fn start_consume(
         &self,
-        do_consume: Arc<impl MessageHandler>,
+        do_consume: Arc<impl MessageHandler + Send + Sync + 'static>,
         run: Arc<RwLock<bool>>,
     ) {
         let cluster_info = MqConnection::get_cluster_info(self.name_server_addr.as_str()).await;
@@ -505,31 +505,33 @@ impl PullConsumer {
     }
 
     pub async fn consume_rx(
-        do_consume: Arc<impl MessageHandler>,
+        do_consume: Arc<impl MessageHandler + Send + Sync + 'static>,
         mut msg_rx: Receiver<MessageBody>,
         run: Arc<RwLock<bool>>,
     ) {
-        loop {
-            if !*run.read().await {
-                info!("stop consume message");
-                break;
-            }
-            let body = msg_rx.recv().await;
-            match body {
-                None => {
-                    debug!("receive non");
+        tokio::spawn(async move {
+            loop {
+                if !*run.read().await {
+                    info!("stop consume message");
+                    break;
                 }
-                Some(msg_body) => {
-                    debug!(
+                let body = msg_rx.recv().await;
+                match body {
+                    None => {
+                        debug!("receive non");
+                    }
+                    Some(msg_body) => {
+                        debug!(
                         "do consume msg:{},{},{}",
                         msg_body.topic.as_str(),
                         msg_body.queue_id,
                         msg_body.msg_id
                     );
-                    do_consume.handle(&msg_body).await;
+                        do_consume.handle(&msg_body).await;
+                    }
                 }
             }
-        }
+        });
     }
 
     async fn calc_used_queues(
@@ -600,6 +602,11 @@ mod test {
 
     struct Handler {}
 
+    unsafe impl Send for Handler {
+
+    }
+
+    unsafe impl Sync for Handler {}
     impl super::MessageHandler for Handler {
         async fn handle(&self, message: &super::MessageBody) {
             info!(
@@ -608,8 +615,6 @@ mod test {
             );
         }
     }
-
-    unsafe impl std::marker::Send for Handler {}
 
     #[tokio::test]
     async fn pull_message_test() {
