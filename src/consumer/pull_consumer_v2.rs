@@ -353,7 +353,7 @@ impl PullConsumer {
             server_cmd.header_serialize_method,
             server_cmd.e_body,
         );
-        debug!("pull message response header:{:?}", &response_header);
+        // debug!("pull message response header:{:?}", &response_header);
         let mut offset = 0;
         if response_header.is_some() {
             let response_header = response_header.unwrap();
@@ -415,7 +415,7 @@ impl PullConsumer {
                 }
             }
             response_code::PULL_NOT_FOUND => {
-                debug!("no message found");
+                // debug!("no message found");
                 // sleep(10).await;
             }
             _ => {
