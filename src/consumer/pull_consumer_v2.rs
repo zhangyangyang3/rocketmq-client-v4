@@ -113,6 +113,7 @@ impl PullConsumer {
         cmd_map: Arc<DashMap<i32, MqCommand>>,
         run: Arc<RwLock<bool>>,
     ) {
+        let run1 = run.clone();
         tokio::spawn(async move {
             loop {
                 if !*run.read().await {
@@ -123,10 +124,15 @@ impl PullConsumer {
                 let cmd = cmd_rx.recv().await;
                 match cmd {
                     None => {
+                        {
+                            info!("cmd_rx recv none. quit");
+                            let mut lock = run.write().await;
+                            *lock = false;
+                        }
                         break;
                     }
                     Some(real_cmd) => {
-                        Self::write_cmd_to_mq(real_cmd, &mut write, cmd_map.clone()).await;
+                        Self::write_cmd_to_mq(real_cmd, &mut write, cmd_map.clone(), &run1).await;
                     }
                 }
             }
@@ -153,6 +159,10 @@ impl PullConsumer {
                 let readable = read_half.readable().await;
                 if readable.is_err() {
                     warn!("mq broker stream broken. remote addr:{:?}", read_half.peer_addr());
+                    {
+                        let mut lock = run.write().await;
+                        *lock = false;
+                    }
                     break;
                 }
                 let broker_addr = read_half.peer_addr().unwrap().to_string();
@@ -161,6 +171,10 @@ impl PullConsumer {
                 let server_cmd = MqCommand::read_from_read_half(&mut read_half).await;
                 if server_cmd.is_none() {
                     warn!("read cmd from mq failed, remote addr:{:?}", read_half.peer_addr());
+                    {
+                        let mut lock = run.write().await;
+                        *lock = false;
+                    }
                     break;
                 }
                 let server_cmd = server_cmd.unwrap();
@@ -288,6 +302,7 @@ impl PullConsumer {
         cmd: MqCommand,
         write: &mut OwnedWriteHalf,
         cmd_map: Arc<DashMap<i32, MqCommand>>,
+        run: &Arc<RwLock<bool>>,
     ) {
         // send cmd to mq
         // debug!(
@@ -309,7 +324,11 @@ impl PullConsumer {
                 req_code,
                 opaque,
                 w.err()
-            )
+            );
+            {
+                let mut lock = run.write().await;
+                *lock = false;
+            }
         }
     }
 
@@ -429,6 +448,8 @@ impl PullConsumer {
 
     async fn send_heartbeat(tx: Sender<MqCommand>, consumer: Arc<PullConsumer>) {
         tokio::spawn(async move {
+
+
             let heartbeat_data = HeartbeatData::new_push_consumer_data(
                 consumer.client_id.clone(),
                 consumer.consume_group.clone(),
@@ -436,10 +457,14 @@ impl PullConsumer {
                 SubscriptionData::simple_new(consumer.topic.clone()),
                 MESSAGE_MODEL_CLUSTER.to_string(),
             );
-            let heartbeat_data = heartbeat_data.to_json_bytes();
-            let heartbeat_cmd =
-                MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], heartbeat_data);
-            tx.send(heartbeat_cmd).await.unwrap();
+            loop {
+                let heartbeat_data = heartbeat_data.to_json_bytes();
+                let heartbeat_cmd =
+                    MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], heartbeat_data);
+                tx.send(heartbeat_cmd).await.unwrap();
+                Self::sleep(10_000).await;
+            }
+
         });
     }
 
@@ -685,7 +710,7 @@ mod test {
         tokio::spawn(async move {
             consumer.start_consume(handle, run).await;
         });
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(200)).await;
         {
         let mut run = lock.write().await;
         *run = false;
