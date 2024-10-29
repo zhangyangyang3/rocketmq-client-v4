@@ -53,8 +53,10 @@ pub async fn main() {
         consumer.start_consume(handle, run).await;
     });
     tokio::time::sleep(Duration::from_secs(40)).await;
-    let mut run = lock.write().await;
-    *run = false;
+    {
+        let mut run = lock.write().await;
+        *run = false;
+    }
     tokio::time::sleep(Duration::from_secs(2)).await;
     info!("quit the test")
 }
