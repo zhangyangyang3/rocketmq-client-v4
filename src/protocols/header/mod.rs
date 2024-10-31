@@ -17,3 +17,7 @@ pub mod notify_consumer_ids_changed_request_header;
 pub mod send_message_request_header;
 
 pub mod get_consumer_running_info_requestheader;
+
+pub mod get_max_offset_request_header;
+
+pub mod get_max_offset_response_header;

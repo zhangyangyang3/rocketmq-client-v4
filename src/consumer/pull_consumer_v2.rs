@@ -1,6 +1,6 @@
 use crate::connection::{get_client_ip, MqConnection};
 use crate::consumer::message_handler::MessageHandler;
-use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_CLUSTER};
+use crate::protocols::body::consumer_data::{CONSUME_FROM_LAST_OFFSET, MESSAGE_MODEL_BROADCAST, MESSAGE_MODEL_CLUSTER};
 use crate::protocols::body::consumer_running_info::ConsumerRunningInfo;
 use crate::protocols::body::heartbeat_data::HeartbeatData;
 use crate::protocols::body::message_body::MessageBody;
@@ -25,6 +25,8 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use crate::protocols::body::topic_route_data::TopicRouteData;
+use crate::protocols::header::get_max_offset_request_header::GetMaxOffsetRequestHeader;
+use crate::protocols::header::get_max_offset_response_header::GetMaxOffsetResponseHeader;
 
 #[derive(Debug, Clone)]
 pub struct PullConsumer {
@@ -32,15 +34,43 @@ pub struct PullConsumer {
     pub consume_group: String,
     pub client_id: String,
     pub topic: String,
-    pub broadcast: bool,
     pub client_addr: String,
     pub start_time: i64,
+    pub message_model: String,
 }
 
 impl PullConsumer {
     pub fn new(name_server_addr: String, consume_group: String, topic: String) -> PullConsumer {
         let client_addr = get_client_ip();
-        let mut client_id = String::from(&client_addr);
+        let client_id = Self::build_client_id(client_addr.as_str());
+        Self {
+            name_server_addr,
+            consume_group,
+            client_id,
+            topic,
+            client_addr,
+            start_time: get_current_time_millis(),
+            message_model: MESSAGE_MODEL_CLUSTER.to_string()
+        }
+    }
+
+    pub fn new_broadcast_consumer(name_server_addr: String, consume_group: String, topic: String) -> PullConsumer {
+        let client_addr = get_client_ip();
+        let client_id = Self::build_client_id(client_addr.as_str());
+        Self {
+            name_server_addr,
+            consume_group,
+            client_id,
+            topic,
+            client_addr,
+            start_time: get_current_time_millis(),
+            message_model: MESSAGE_MODEL_BROADCAST.to_string()
+        }
+    }
+
+
+    fn build_client_id(addr: &str) -> String {
+        let mut client_id = String::from(addr);
         client_id.push_str("@");
         client_id.push_str(
             sysinfo::get_current_pid()
@@ -49,15 +79,7 @@ impl PullConsumer {
                 .to_string()
                 .as_str(),
         );
-        Self {
-            name_server_addr,
-            consume_group,
-            client_id,
-            topic,
-            broadcast: false,
-            client_addr,
-            start_time: get_current_time_millis(),
-        }
+        client_id
     }
     pub async fn start_consume(
         &self,
@@ -78,7 +100,7 @@ impl PullConsumer {
             let queue_offset_map = Arc::new(DashMap::<i32, i64>::new());
             let consumer = consumer.clone();
             let run = run.clone();
-            Self::send_heartbeat(cmd_tx.clone(), consumer.clone()).await;
+            Self::send_heartbeat(cmd_tx.clone(), consumer.clone(), run.clone()).await;
             Self::read_cmd(
                 read_half,
                 cmd_tx.clone(),
@@ -202,8 +224,9 @@ impl PullConsumer {
                     }
 
                     response_code::TOPIC_NOT_EXIST => {
-                        warn!(
-                            "topic not exits:{:?}",
+                        info!(
+                            "topic in broker: {:?} not exits:{:?}",
+                            broker_addr,
                             String::from_utf8(server_cmd.r_body.clone())
                         );
                     }
@@ -264,6 +287,7 @@ impl PullConsumer {
                                     QueryConsumerOffsetResponseHeader::convert_from_command(
                                         server_cmd,
                                     );
+                                debug!("queue offset:{:?}, {:?}", req, offset);
                                 let offset = match offset {
                                     None => -1,
                                     Some(o) => o.offset,
@@ -272,6 +296,17 @@ impl PullConsumer {
                                     queue_offset_map.insert(req.queueId, offset);
                                 }
                             }
+
+                            request_code::GET_MAX_OFFSET => {
+                                let req = GetMaxOffsetRequestHeader::convert_from_cmd(&req_cmd);
+                                let offset = GetMaxOffsetResponseHeader::convert_from_cmd(&server_cmd);
+                                debug!("queue max offset,broker:{:?} req:{:?}, offset:{}",broker_addr, req, offset.offset);
+                                if offset.offset >= 0 {
+                                    queue_offset_map.insert(req.queueId, offset.offset);
+                                }
+
+                            }
+
                             request_code::GET_CONSUMER_LIST_BY_GROUP => {
                                 Self::do_balance(&req_cmd, &server_cmd, &consumer, &mut queue_list, broker_addr.as_str())
                                     .await;
@@ -385,28 +420,30 @@ impl PullConsumer {
                     "FOUND" => {
                         let bodies = MessageBody::decode_from_bytes(server_cmd.body);
 
-                        debug!("message count:{}", bodies.len());
+                        debug!("message count:{}, response header offset:{}", bodies.len(), offset);
                         let temp = bodies.get(0).unwrap();
                         let old_offset = match queue_offset_map.get(&temp.queue_id) {
                             Some(v) => v.value().clone(),
                             None => -1,
                         };
+
                         if old_offset >= offset {
                             debug!(
-                                "topic:{}, queue:{}, offset:{} already pulled.",
-                                temp.topic.as_str(),
-                                temp.queue_id,
-                                offset
-                            );
+                                    "topic:{}, queue:{}, offset:{} already pulled.",
+                                    temp.topic.as_str(),
+                                    temp.queue_id,
+                                    offset
+                                    );
                             return;
                         }
 
                         for m in &bodies {
                             debug!(
-                                "send msg to consume:{},{},{}",
+                                "send msg to consume:{}, queue: {},msg_id:{}, offset:{}",
                                 m.topic.as_str(),
                                 m.queue_id,
-                                m.msg_id.as_str()
+                                m.msg_id.as_str(),
+                                m.queue_offset
                             );
 
                             let send = msg_sender.send(m.clone()).await;
@@ -415,26 +452,27 @@ impl PullConsumer {
                                 // todo should re consume
                             }
                         }
-
                         queue_offset_map.insert(temp.queue_id, offset);
-                        let update_offset = UpdateConsumerOffsetRequestHeader::new(
-                            consumer.consume_group.clone(),
-                            consumer.topic.clone(),
-                            temp.queue_id,
-                            offset,
-                        )
-                        .command();
-                        cmd_sender.send(update_offset).await.unwrap();
+                        if consumer.message_model == MESSAGE_MODEL_CLUSTER {
+                            let update_offset = UpdateConsumerOffsetRequestHeader::new(
+                                consumer.consume_group.clone(),
+                                consumer.topic.clone(),
+                                temp.queue_id,
+                                offset,
+                            )
+                                .command();
+                            cmd_sender.send(update_offset).await.unwrap();
+                        }
                     }
                     _ => {
                         debug!("does not get message:{}", r_body);
-                        // sleep(10).await;
+                        Self::sleep(1).await;
                     }
                 }
             }
             response_code::PULL_NOT_FOUND => {
                 // debug!("no message found");
-                // sleep(10).await;
+                // Self::sleep(10).await;
             }
             _ => {
                 warn!(
@@ -442,29 +480,31 @@ impl PullConsumer {
                     server_cmd.req_code,
                     String::from_utf8(server_cmd.r_body)
                 );
+                // Self::sleep(100).await;
             }
         }
     }
 
-    async fn send_heartbeat(tx: Sender<MqCommand>, consumer: Arc<PullConsumer>) {
+    async fn send_heartbeat(tx: Sender<MqCommand>, consumer: Arc<PullConsumer>, run: Arc<RwLock<bool>>) {
         tokio::spawn(async move {
-
 
             let heartbeat_data = HeartbeatData::new_push_consumer_data(
                 consumer.client_id.clone(),
                 consumer.consume_group.clone(),
                 CONSUME_FROM_LAST_OFFSET,
                 SubscriptionData::simple_new(consumer.topic.clone()),
-                MESSAGE_MODEL_CLUSTER.to_string(),
+                consumer.message_model.clone(),
             );
             loop {
+                if !*run.read().await {
+                    break;
+                }
                 let heartbeat_data = heartbeat_data.to_json_bytes();
                 let heartbeat_cmd =
                     MqCommand::new_with_body(request_code::HEART_BEAT, vec![], vec![], heartbeat_data);
                 tx.send(heartbeat_cmd).await.unwrap();
-                Self::sleep(10_000).await;
+                Self::sleep(1000).await;
             }
-
         });
     }
 
@@ -509,16 +549,25 @@ impl PullConsumer {
 
                     if offset < 0 {
                         info!("fetch queue offset. queue:{:?}", queue);
-                        let cmd = QueryConsumerOffsetRequestHeader::new(
-                            consumer.consume_group.clone(),
-                            consumer.topic.clone(),
-                            queue.queueId,
-                        )
-                        .to_command();
+                        let cmd = match consumer.message_model.as_str() {
+                            MESSAGE_MODEL_CLUSTER => {
+                                QueryConsumerOffsetRequestHeader::new(
+                                    consumer.consume_group.clone(),
+                                    consumer.topic.clone(),
+                                    queue.queueId,
+                                )
+                                    .to_command()
+                            }
+                            _ => {
+                                GetMaxOffsetRequestHeader::new(consumer.topic.clone(), queue.queueId).to_cmd()
+                            }
+
+                        };
+
                         let opaque = cmd.opaque;
                         debug!("send fetch queue offset, opaque:{}", opaque);
                         tx.send(cmd).await.unwrap();
-                        Self::sleep(10).await;
+                        Self::sleep(200).await;
                         continue;
                     }
 
@@ -532,7 +581,7 @@ impl PullConsumer {
                     .to_command();
                     tx.send(cmd).await.unwrap();
                 }
-                Self::sleep(100).await;
+                Self::sleep(1050).await;
             }
         });
     }
@@ -588,6 +637,11 @@ impl PullConsumer {
             warn!("consumer list is empty");
             return used_mqs;
         }
+        // broadcast need consume every msg
+        if consumer.message_model == MESSAGE_MODEL_BROADCAST {
+            return total_message_queue;
+        }
+
         let mut idx = 0;
         for i in 0..consumer_list.len() {
             if consumer_list[i] == consumer.client_id {
@@ -660,7 +714,8 @@ impl PullConsumer {
                 }
             }
         }
-        panic!("no broker addr : {} found in route data:{:?}", broker_addr, topic_rote_data);
+        info!("no broker addr : {} found in route data:{:?}", broker_addr, topic_rote_data);
+        return "".to_string();
     }
 }
 
@@ -714,6 +769,41 @@ mod test {
         {
         let mut run = lock.write().await;
         *run = false;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        info!("quit the test")
+    }
+
+    #[tokio::test]
+    async fn broadcast_consumer_test() {
+        let offset = UtcOffset::from_hms(8, 0, 0).unwrap();
+        simple_logger::SimpleLogger::new()
+            .with_utc_offset(offset)
+            .with_level(LevelFilter::Debug)
+            .env()
+            .init()
+            .unwrap();
+
+        let name_addr = "192.168.3.49:9876".to_string();
+
+        let topic = "MessageCluster_To".to_string();
+        let consume_group = "Message_messageClusterInput_group".to_string();
+        let consumer = PullConsumer::new_broadcast_consumer(name_addr.clone(), consume_group, topic);
+
+
+        let handle = Arc::new(Handler {});
+        let lock = Arc::new(RwLock::new(true));
+        let run = lock.clone();
+
+
+
+        tokio::spawn(async move {
+            consumer.start_consume(handle.clone(), run.clone()).await;
+        });
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        {
+            let mut run = lock.write().await;
+            *run = false;
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
         info!("quit the test")

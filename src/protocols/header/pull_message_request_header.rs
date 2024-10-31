@@ -8,7 +8,7 @@ use tokio::net::TcpStream;
 const MAX_MSG_NUMS: i32 = 128;
 const SYS_FLAG: i32 = 2;
 
-const SUSPEND_TIMEOUT_MILLIS: i64 = 1 * 100;
+const SUSPEND_TIMEOUT_MILLIS: i64 = 1 * 1000;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_snake_case)]

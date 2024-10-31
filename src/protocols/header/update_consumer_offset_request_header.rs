@@ -1,9 +1,6 @@
 use crate::protocols::mq_command::MqCommand;
 use crate::protocols::{request_code, SerializeDeserialize};
-use log::debug;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -49,22 +46,6 @@ impl UpdateConsumerOffsetRequestHeader {
     pub fn command(&self) -> MqCommand {
         let body = self.to_bytes_1();
         MqCommand::new_with_body(request_code::UPDATE_CONSUMER_OFFSET, vec![], body, vec![])
-    }
-    pub async fn send_update_consumer_offset(&self, broker_stream: &mut TcpStream) {
-        let body = self.command();
-        let opaque = body.opaque;
-        let body = body.to_bytes();
-
-        let result = broker_stream.write_all(&body).await;
-        if result.is_err() {
-            panic!("send update consumer offset failed: {:?}", result.err());
-        }
-        let _ = broker_stream.flush().await;
-        let cmd = MqCommand::read_from_stream_with_opaque(broker_stream, opaque).await;
-        debug!(
-            "update consumer offset:{:?}, return:{}",
-            &self, cmd.req_code
-        );
     }
 }
 
