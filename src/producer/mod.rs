@@ -9,8 +9,8 @@ use crate::protocols::mq_command::MqCommand;
 use crate::protocols::{get_current_time_millis, request_code, PermName, SerializeDeserialize};
 use local_ip_address::local_ip;
 use log::{debug, warn};
-use std::collections::HashMap;
 use std::time::Duration;
+use dashmap::DashMap;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -21,7 +21,7 @@ pub struct Producer {
     pub client_id: String,
     pub message_queue: i32,
     pub name_server: String,
-    pub message_queue_map: HashMap<String, Vec<MessageQueue>>,
+    pub message_queue_map: DashMap<String, Vec<MessageQueue>>,
     pub tx: mpsc::Sender<MqCommand>,
 }
 
@@ -37,7 +37,7 @@ impl Producer {
             client_id,
             message_queue: 1,
             name_server,
-            message_queue_map: HashMap::new(),
+            message_queue_map: DashMap::new(),
             tx,
         }
     }
@@ -97,12 +97,12 @@ impl Producer {
         });
     }
     pub async fn send_message(
-        &mut self,
+        &self,
         topic: String,
         message: Vec<u8>,
         key: String,
     ) -> Result<(), std::io::Error> {
-        let mut properties = HashMap::new();
+        let properties = DashMap::new();
         properties.insert("KEYS".to_string(), key);
         properties.insert("WAIT".to_string(), "true".to_string());
         self.send_with_properties(topic, properties, message).await
@@ -115,7 +115,7 @@ impl Producer {
         message: Vec<u8>,
         key: String,
     ) -> Result<(), std::io::Error> {
-        let mut properties = HashMap::new();
+        let properties = DashMap::new();
         properties.insert("TAGS".to_string(), tag);
         properties.insert("KEYS".to_string(), key);
         properties.insert("WAIT".to_string(), "true".to_string());
@@ -124,9 +124,9 @@ impl Producer {
     }
 
     pub async fn send_with_properties(
-        &mut self,
+        & self,
         topic: String,
-        properties: HashMap<String, String>,
+        properties: DashMap<String, String>,
         message: Vec<u8>,
     ) -> Result<(), std::io::Error> {
         let mut message = MqMessage::new(topic.clone(), message);
@@ -201,10 +201,10 @@ mod send_test {
         let message_body = r#"{"id":"3910000000000056508"}"#;
         let body = message_body.as_bytes().to_vec();
 
-        let name_addr = "192.168.3.49:9876".to_string();
-        let topic = "topic_test_007".to_string();
+        let name_addr = "111.230.12.106:9876".to_string();
+        let topic = "TopicTest".to_string();
 
-        let mut producer = Producer::new("rust_send_group_1".to_string(), name_addr.clone()).await;
+        let producer = Producer::new("rust_send_group_1".to_string(), name_addr.clone()).await;
         for _i in 0..10 {
             let uid = Uuid::new_v4();
             producer
