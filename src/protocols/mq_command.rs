@@ -68,7 +68,9 @@ pub struct RemotingCommand {
     pub version: i32,
     pub opaque: i32,
     pub flag: i32,
+    #[serde(default)]
     pub remark: Option<String>,
+    #[serde(default)]
     pub extFields: HashMap<String, String>,
     pub serializeTypeCurrentRPC: Option<String>,
 }

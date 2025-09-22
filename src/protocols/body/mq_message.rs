@@ -1,6 +1,6 @@
 use crate::protocols::header::send_message_request_header::SendMessageRequestHeader;
 use bytes::{BufMut, BytesMut};
-use std::collections::HashMap;
+use dashmap::DashMap;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub struct MqMessage {
     pub topic: String,
     pub flag: i32,
-    pub properties: HashMap<String, String>,
+    pub properties: DashMap<String, String>,
     pub body: Vec<u8>,
     pub transactionId: String,
 }
@@ -18,7 +18,7 @@ impl MqMessage {
         MqMessage {
             topic,
             flag: 0,
-            properties: HashMap::new(),
+            properties: DashMap::new(),
             body,
             transactionId: Uuid::new_v4().to_string(),
         }

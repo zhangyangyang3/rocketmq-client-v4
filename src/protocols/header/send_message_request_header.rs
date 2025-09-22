@@ -1,7 +1,7 @@
 use crate::protocols::{get_current_time_millis, SerializeDeserialize};
 use bytes::{BufMut, BytesMut};
+use dashmap::DashMap;
 use serde::Serialize;
-use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
@@ -26,7 +26,7 @@ impl SendMessageRequestHeader {
         producer_group: String,
         topic: String,
         queue_id: i32,
-        properties: &HashMap<String, String>,
+        properties: &DashMap<String, String>,
     ) -> Self {
         SendMessageRequestHeader {
             producerGroup: producer_group,
@@ -45,9 +45,11 @@ impl SendMessageRequestHeader {
         }
     }
 
-    pub fn convert_map_to_string(map: &HashMap<String, String>) -> String {
+    pub fn convert_map_to_string(map: &DashMap<String, String>) -> String {
         let mut bytebuf = BytesMut::with_capacity(128);
-        for (k, v) in map {
+        for entry in map.iter() {
+            let k = entry.key();
+            let v = entry.value();
             bytebuf.put_slice(k.as_bytes());
             bytebuf.put_u8(1);
             bytebuf.put_slice(v.as_bytes());
